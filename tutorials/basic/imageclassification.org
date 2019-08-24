@@ -127,7 +127,7 @@
 
   #+RESULTS: 4ff25e2f-f916-4b5a-a57e-47c16b46e28a
   :results:
-  [[file:ein-images/ob-ein-d4c771ea1dd071edb634be0488919792.png]]
+  [[file:ein-images/ob-ein-24abf0e3734be4c28f98ace180b61624.png]]
   :end:
   
 ** 画像の正規化
@@ -160,13 +160,20 @@
             super(MyModel, self).__init__()
             self.flatten = keras.layers.Flatten(input_shape=(28, 28))
             self.d1 = keras.layers.Dense(128, activation='relu')
-            self.d2 = keras.layers.Dense(128, activation='softmax')
+            self.d2 = keras.layers.Dense(10, activation='softmax')
 
         def call(self, x):
             return reduce(lambda x, f: f(x), [x, self.flatten, self.d1, self.d2])
 
 
     model = MyModel()
+
+    # model = keras.Sequential([
+    #     keras.layers.Flatten(input_shape=(28, 28)),
+    #     keras.layers.Dense(128, activation='relu'),
+    #     keras.layers.Dense(10, activation='softmax')
+    # ])
+
     model.compile(optimizer='adam',
                   loss='sparse_categorical_crossentropy',
                   metrics=['accuracy'])
@@ -178,40 +185,103 @@
 
 * モデルの訓練
   #+NAME: d3ee3d4e-8536-43fa-96d6-34495abb5577
-  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  #+BEGIN_SRC ein-python :session localhost :results none drawer :exports both
   model.fit(train_images, train_labels, epochs=10)
   #+END_SRC
 
   #+RESULTS: d3ee3d4e-8536-43fa-96d6-34495abb5577
-  :results:  
-  WARNING: Logging before flag parsing goes to stderr.
-  W0824 17:06:10.599414 140015014143616 deprecation.py:323] From /home/meguru/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/tensorflow/python/ops/math_grad.py:1250: add_dispatch_support.<locals>.wrapper (from tensorflow.python.ops.array_ops) is deprecated and will be removed in a future version.
-  Instructions for updating:
-  Use tf.where in 2.0, which has the same broadcast rule as np.where
-
+  :results:
   Train on 60000 samples
   Epoch 1/10
-  60000/60000 [==============================] - 2s 39us/sample - loss: 2.4317 - accuracy: 0.1011
+  60000/60000 [==============================] - 2s 38us/sample - loss: 1.0990 - accuracy: 0.6615
   Epoch 2/10
-  60000/60000 [==============================] - 2s 37us/sample - loss: 2.3056 - accuracy: 0.0992
+  60000/60000 [==============================] - 2s 36us/sample - loss: 0.6437 - accuracy: 0.7694
   Epoch 3/10
-  60000/60000 [==============================] - 2s 38us/sample - loss: 2.3055 - accuracy: 0.1002
+  60000/60000 [==============================] - 2s 36us/sample - loss: 0.5687 - accuracy: 0.7965
   Epoch 4/10
-  60000/60000 [==============================] - 2s 37us/sample - loss: 2.3050 - accuracy: 0.0997
+  60000/60000 [==============================] - 2s 37us/sample - loss: 0.5258 - accuracy: 0.8141
   Epoch 5/10
-  60000/60000 [==============================] - 2s 37us/sample - loss: 2.3047 - accuracy: 0.1015
+  60000/60000 [==============================] - 2s 40us/sample - loss: 0.4979 - accuracy: 0.8253
   Epoch 6/10
-  60000/60000 [==============================] - 2s 37us/sample - loss: 2.3045 - accuracy: 0.1010
+  60000/60000 [==============================] - 2s 39us/sample - loss: 0.4785 - accuracy: 0.8315
   Epoch 7/10
-  60000/60000 [==============================] - 2s 37us/sample - loss: 2.3044 - accuracy: 0.1000
+  60000/60000 [==============================] - 2s 38us/sample - loss: 0.4641 - accuracy: 0.8363
   Epoch 8/10
-  60000/60000 [==============================] - 2s 37us/sample - loss: 2.3041 - accuracy: 0.1011
+  60000/60000 [==============================] - 2s 36us/sample - loss: 0.4517 - accuracy: 0.8417
   Epoch 9/10
-  60000/60000 [==============================] - 2s 37us/sample - loss: 2.3040 - accuracy: 0.0983
+  60000/60000 [==============================] - 2s 36us/sample - loss: 0.4426 - accuracy: 0.8445
   Epoch 10/10
-  60000/60000 [==============================] - 2s 37us/sample - loss: 2.3037 - accuracy: 0.0977
+  60000/60000 [==============================] - 2s 41us/sample - loss: 0.4344 - accuracy: 0.8468
 
-  <tensorflow.python.keras.callbacks.History at 0x7f574e468b50>
+  <tensorflow.python.keras.callbacks.History at 0x7f65fef26c50>
+
+  Last executed 2019-08-24T18:02:40 in 23.0s
   :end:
 
+* モデルの評価
+  #+NAME: a7212457-67a4-4456-85cc-8ca47ab65521
+  #+BEGIN_SRC ein-python :session localhost :results none drawer :exports both
+    test_loss, test_acc = model.evaluate(test_images, test_labels)
+    print_infos(['\n', 'test accuracy', test_acc])
+  #+END_SRC
+
+  #+RESULTS: a7212457-67a4-4456-85cc-8ca47ab65521
+  :results:
+  10000/10000 [==============================] - 0s 21us/sample - loss: 0.4611 - accuracy: 0.8347
+
+
+  test accuracy
+  0.8347
+
+
+  Last executed 2019-08-24T18:04:26 in 0.0s
+  :end:
+
+* モデルの推論
+  #+NAME: 2846cc55-c37a-4cf8-bb20-e768c303b8ca
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    predictions = model.predict(test_images[0:1])
+    prediction = np.argmax(predictions[0])
+    print_infos([
+        'predictions', '-----------', predictions[0], '\n', 'predictions argmax',
+        "-----------", '{}: {} ({}%)'.format(prediction, class_names[prediction],
+                                             predictions[0][9] * 100)
+    ])
+
+    plt.figure(figsize=(6,3))
+
+    plt.subplot(1, 2, 1)
+    plt.imshow(test_images[0], cmap='binary_r')
+    plt.grid(False)
+    plt.xlabel(class_names[prediction])
+
+    plt.subplot(1, 2, 2)
+    plt.grid(False)
+    plt.xticks(range(10))
+    plt.yticks([])
+    predict_plot = plt.bar(range(10), predictions[0], color='#777777')
+    plt.ylim([0, 1])
+    if prediction != test_labels[0]:
+        predict_plot[prediction].set_color('red')
+        predict_plot[test_labels[0]].set_color('blue')
+    else:
+        predict_plot[prediction].set_color('magenta')
+
+    plt.show()
+  #+END_SRC
+
+  #+RESULTS: 2846cc55-c37a-4cf8-bb20-e768c303b8ca
+  :results:
+  predictions
+  -----------
+  [4.9821500e-07 1.8646313e-08 6.3109460e-06 5.5598271e-06 5.8469664e-06
+   1.1526006e-01 1.1658683e-05 3.0735460e-01 5.3111254e-03 5.7204431e-01]
+
+
+  predictions argmax
+  -----------
+  9: Ankle boot (57.2044312953949%)
+
+  [[file:ein-images/ob-ein-5b388b332210f0317a3d8f44aa7a74b2.png]]
+  :end:
 
