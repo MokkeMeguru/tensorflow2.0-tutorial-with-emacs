@@ -1,0 +1,185 @@
+#+options: ':n
+
+il *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t
+#+title: How to run this project
+#+date: <2019-08-24 土>
+#+author: meguru
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.2.4)
+* Requirement
+  - Required
+    * Python >= 3.6 
+    * Linux or Mac OS
+    * Emacs >= 26
+    * Spacemacs >= 0.2
+    * GPU such as NVIDIA GeForce GTX 1080
+  - Optional
+    * Cuda == 10
+     * cudnn == 7
+      * yay >= v9.2.1
+* Setup Cuda Environment
+  1. install cuda-10.0 (AUR) ~yay cuda-10.0~
+
+  2. Freeze cuda version ~nano ~/etc/pacman.conf~     
+          #+begin_src text
+     # ... 
+     
+     # Pacman won't upgrade packages listed in IgnorePkg and members of IgnoreGroup
+     IgnorePkg = cuda
+     #IgnoreGroup = 
+     # ...
+     #+end_src
+
+  3. install cudnn >=7.6.1 ~yay -G cudnn~ (WARN: at 2019/08/24)
+     1. Edit ~cudnn/PKGBUILD~
+             #+CAPTION: cudnn/PKGBUILD
+            #+begin_src text
+           # ...
+           pkgname=cudnn
+           pkgver=7.6.3.30
+           _cudaver=10.0
+           pkgrel=1
+           pkgdesc="NVIDIA CUDA Deep Neural Network library"
+           arch=('x86_64')
+           url="https://developer.nvidia.com/cuDNN"
+           license=('custom')
+           # depends=('cuda>=10')
+           # To figure ...
+           #+end_src
+
+     2. for upgrade checksum ~updpkgsums~ in the folder ~cudnn~
+          #+begin_src shell
+          cd cudnn
+          updpkgsums
+          #+end_src
+  
+  4. install cudnn
+     #+begin_src shell
+     makepkg -si
+     #+end_src
+  5. remove the folder ~cudnn~
+  6. add path via ~~/.bashrc~
+   
+     #+CAPTION: ~/.bashrc
+     #+begin_src shell
+     # ...
+     export PATH="$PATH:/opt/cuda/bin"
+     export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/opt/cuda/lib64"
+     #+end_src
+
+     NOTICE: Don't forget ~source ~/.bashrc~ or Re:login
+
+* Setup Tensorflow Environment
+  1. Generate Virtualenvironment ~python -m venv venv~ at your working directory
+   2. ~source venv/bin/activate~
+   3. ~pip install tensorflow-gpu==2.0.0-beta~
+   4. check Correctly install Tensorflow and check GPU Support
+      #+CAPTION: Your terminal in which the virtualenv is activated 
+      #+begin_src shell
+      python
+      >> import tensorflow as tf
+      >> print("Success" if tf.add(1, 2).numpy() == 3 else "Fail")
+      >> exit()
+      #+end_src
+      
+      Did you see some logs which contain some messages and find "Success"?
+      
+      #+CAPTION messages (example)
+|-------------------------------------------------------|
+| messages                                              |
+|-------------------------------------------------------|
+| Successfully opened dynamic library libcuda.so.1      |
+| Successfully opened dynamic library libcudart.so.10.0 |
+| Successfully opened dynamic library libcudnn.so.7     |
+|-------------------------------------------------------|
+
+* Setup Spacemacs
+  1. install emacs ~sudo pacman -Syu emacs~
+  2. ~mv ~/.emacs.d ~/.emacs.d-bak~ (for backup your environment)
+  3. ~git clone https://github.com/syl20bnr/spacemacs ~/.emacs.d~
+  4. Setup your spacemacs environment
+     
+     Example
+     - Copy your ~.spacemacs~ to ~~/.spacemacs~
+       example ~.spacemacs~ is [[./.spacemacs][here]]
+     - Run ~emacs~ for spacemacs's gui setup
+       
+  5. setup python extention
+       example: ref.  [[./.spacemacs][here settings file]]
+
+     1. set ~dotspacemacs-elpa-https nil~ in the function ~dotspacemacs/init()~
+     2. add *python* *org* in  ~dotspacemacs-configuration-layers~
+     3. add *ein* *elpy* in ~dotspacemacs-additional-packages~     
+     4. add below code in ~dotspacemacs/user-config ()~
+
+  6. ~M-m q R~ (Restrat Emacs) or ~M-m f e R~ (Reflect settings)
+
+* Tensorflow with Org-mode
+  
+  1. install some python package for complementation and syntax checking
+     #+CAPTION: Your terminal in which the virtualenv is activated 
+     #+BEGIN_SRC shell
+     pip install jedi rope autopep8 yapf black flake8 jupyter
+     #+END_SRC
+
+  2. activation virtualenv in your emacs ~M-x pyvenv-activate [RET] <your virtualenv path>~
+
+  3. generate jupyter settings
+
+      #+CAPTION: Your terminal in which the virtualenv is activated 
+     #+BEGIN_SRC shell
+      jupyter notebook --generate-config
+      jupyter notebook password
+     #+END_SRC
+
+  4. run below code your org file
+     
+     In *src block*, *C-c C-c* sis evaluate block
+#+NAME: d8fc8392-fdb7-44ab-9d6b-a618e7a5db55
+#+BEGIN_SRC ein-python :session localhost :results raw  drawer
+import tensorflow as tf
+tf.add(1, 2)
+#+END_SRC
+
+#+RESULTS: d8fc8392-fdb7-44ab-9d6b-a618e7a5db55
+:RESULTS:
+<tf.Tensor: id=18, shape=(), dtype=int32, numpy=3>
+:END:
+
+* Tensorflow with raw python file
+  Create ~example.py~
+  
+  #+begin_src python
+import tensorflow as tf
+
+
+def main():
+    print(tf.add(1, 2))
+
+
+if __name__ == '__main__':
+    main()
+  #+end_src
+
+  evaluation statement is ~C-c C-y C-e~ 
+  
+  [[https://github.com/jorgenschaefer/elpy][official page]] show other commands.
+  
+* Tested Environment
+|-----------+--------------------------------------------------------------------|
+| OS        | 4.19.66-1-MANJARO                                                  |
+| GPU       | NVIDIA GeForce GTX 1080                                            |
+| Emacs     | GNU Emacs 26.2 (build 1, x86_64-pc-linux-gnu, GTK+ Version 3.24.8) |
+| Spacemacs | 0.200.13                                                           |
+| Python    | 3.7.4                                                              |
+| Cuda      | Cuda compilation tools, release 10.0, V10.0.130                    |
+| cudnn     | 7                                                                  |
+|-----------+--------------------------------------------------------------------|
+
+install jupyter
