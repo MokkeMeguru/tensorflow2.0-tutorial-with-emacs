@@ -241,6 +241,7 @@
   #+NAME: 2846cc55-c37a-4cf8-bb20-e768c303b8ca
   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
     predictions = model.predict(test_images[0:1])
+    # or model.predict(np.expand_dims(test_images[0], 0))
     prediction = np.argmax(predictions[0])
     print_infos([
         'predictions', '-----------', predictions[0], '\n', 'predictions argmax',
