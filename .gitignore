@@ -14,3 +14,5 @@ _minted*/
 *.toc
 *.tex
 *.run.xml
+.ipynb_checkpoints/
+ltximg/
