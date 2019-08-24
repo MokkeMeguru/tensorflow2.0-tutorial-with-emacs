@@ -341,7 +341,7 @@ feature_layer = tf.keras.layers.DenseFeatures(feature_columns)
 
 * モデルの訓練
   #+NAME: 47545f39-1eb7-4ea4-827c-a98143caecdf
-  #+BEGIN_SRC ein-python :session localhost :results none drawer
+  #+BEGIN_SRC ein-python :session localhost :results none drawer :exports both
   model.fit(train_ds, validation_data=val_ds, epochs=5)
   model.summary()
   #+END_SRC
