@@ -1,0 +1,393 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t
+#+title: 構造化データの分類
+#+date: <2019-08-24 土>
+#+author: MokkeMeguru
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+  #+NAME: 08bb0ced-8cbe-4e1f-8d8f-0a03de9e4b5c
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    from __future__ import division, absolute_import
+    from __future__ import print_function, unicode_literals
+    from functools import reduce
+
+    import tensorflow as tf
+    import tensorflow_hub as hub
+    import tensorflow_datasets as tfds
+
+    from tensorflow import keras
+
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    import pandas as pd
+    from sklearn.model_selection import train_test_split
+
+    def print_infos(infolist: list):
+        for info in infolist:
+            print(info)
+
+
+    print_infos([
+        'tensorflow\'s version           : {}'.format(tf.__version__),
+        'tensorflow hub\'s  version: {}'.format(hub.__version__)
+    ])
+  #+END_SRC
+
+  #+RESULTS: 08bb0ced-8cbe-4e1f-8d8f-0a03de9e4b5c
+  :results:
+  tensorflow's version           : 2.0.0-beta1
+  tensorflow hub's  version: 0.4.0
+  :end:
+* Pandas data を用いてデータを dataframe に整形する
+  #+NAME: f8b2cb04-8f09-4ce5-8f09-99be70610089
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  URL = 'https://storage.googleapis.com/applied-dl/heart.csv'
+  dataframe = pd.read_csv(URL)
+  dataframe.head()
+  #+END_SRC
+
+  #+RESULTS: f8b2cb04-8f09-4ce5-8f09-99be70610089
+  :results:
+     age  sex  cp  trestbps  chol  fbs  restecg  thalach  exang  oldpeak  slope  \
+  0   63    1   1       145   233    1        2      150      0      2.3      3   
+  1   67    1   4       160   286    0        2      108      1      1.5      2   
+  2   67    1   4       120   229    0        2      129      1      2.6      2   
+  3   37    1   3       130   250    0        0      187      0      3.5      3   
+  4   41    0   2       130   204    0        2      172      0      1.4      1   
+
+     ca        thal  target  
+  0   0       fixed       0  
+  1   3      normal       1  
+  2   2  reversible       0  
+  3   0      normal       0  
+  4   0      normal       0  
+  :end:
+* dataframe を訓練データ・評価データ・検証データを分割する
+  #+NAME: f1dd67e3-5fc9-424d-95ee-497fee5dff97
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    train, test = train_test_split(dataframe, test_size=0.2)
+    train, val = train_test_split(train, test_size=0.2)
+    print_infos([
+        '{:^25}: {}'.format('train_examples', len(train)),
+        '{:^25}:  {}'.format('validation examples', len(val)),
+        '{:^25}: {}'.format('test examples', len(test))
+    ])
+  #+END_SRC
+
+  #+RESULTS: f1dd67e3-5fc9-424d-95ee-497fee5dff97
+  :results:
+       train_examples      : 193
+     validation examples   :  49
+        test examples      : 61
+  :end:
+* 分割したデータを tf.data に持ち込む
+  #+NAME: 0e2dc583-fab1-45f9-94e9-c04f26c81231
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    def df_to_dataset(dataframe, shuffle=True, batch_size=32):
+        dataframe =dataframe.copy()
+        labels = dataframe.pop('target')
+        ds = tf.data.Dataset.from_tensor_slices((dict(dataframe), labels))
+        if shuffle:
+            ds = ds.shuffle(buffer_size=len(dataframe))
+        ds = ds.batch(batch_size)
+        return ds
+
+    batch_size = 5
+    train_ds = df_to_dataset(train, batch_size=batch_size)
+    val_ds = df_to_dataset(val, shuffle=False, batch_size=batch_size)
+    test_ds = df_to_dataset(test, shuffle=False, batch_size=batch_size)
+  #+END_SRC
+
+  #+RESULTS: 0e2dc583-fab1-45f9-94e9-c04f26c81231
+  :results:
+  :end:
+
+
+  tf.data にどのようにデータが持ち込まれたのかを確認する。
+  #+NAME: f2594732-d357-4e65-9096-b050da33121a
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    for feature_batch, label_batch in train_ds.take(1):
+        print_infos([
+            '{:^25}: {}'.format('Every feature', list(feature_batch.keys())),
+            '{:^25}: {}'.format('A batch of ages', feature_batch['age']),
+            '{:^25}: {}'.format('A batch of ages', label_batch),
+        ])
+
+    example_batch = next(iter(train_ds))[0]
+    age = tf.feature_column.numeric_column('age')
+    def demo(feature_column, name):
+        feature_layer = keras.layers.DenseFeatures(feature_column)
+        print_infos([
+            '\n'
+            '{:^25}'.format(name),
+            feature_layer(example_batch).numpy()
+        ])
+
+    demo(age, 'Age example: ')
+  #+END_SRC
+
+  #+RESULTS: f2594732-d357-4e65-9096-b050da33121a
+  :results:
+        Every feature      : ['age', 'sex', 'cp', 'trestbps', 'chol', 'fbs', 'restecg', 'thalach', 'exang', 'oldpeak', 'slope', 'ca', 'thal']
+       A batch of ages     : [57 65 43 50 63]
+       A batch of ages     : [0 0 1 1 1]
+
+        Age example:       
+  [[57.]
+   [65.]
+   [43.]
+   [50.]
+   [63.]]
+  :end:
+  
+  もしユーザを年齢層で分割したいならば、次のように行うことができる。
+  #+NAME: 55257034-c552-4215-ab36-f8727ca99f8c
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    age_buckets = tf.feature_column.bucketized_column(
+        age, boundaries=[18, 25, 30, 35, 40, 45, 50, 55, 60, 65])
+    demo(age_buckets, 'Age example: ')
+  #+END_SRC
+
+  #+RESULTS: 55257034-c552-4215-ab36-f8727ca99f8c
+  :results:
+
+        Age example:       
+  [[0. 0. 0. 0. 0. 0. 0. 0. 1. 0. 0.]
+   [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1.]
+   [0. 0. 0. 0. 0. 1. 0. 0. 0. 0. 0.]
+   [0. 0. 0. 0. 0. 0. 0. 1. 0. 0. 0.]
+   [0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0.]]
+  :end:
+
+  カテゴリをidの形で数値にするには次のようにできます。
+  #+NAME: d91c1bd8-0690-430c-8ce3-3fd971f48658
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    thal = tf.feature_column.categorical_column_with_vocabulary_list(
+        'thal', ['fixed', 'normal', 'reversible']
+    )
+
+    thal_one_hot = tf.feature_column.indicator_column(thal)
+    demo(thal_one_hot, 'thal translated : id')
+  #+END_SRC
+
+  #+RESULTS: d91c1bd8-0690-430c-8ce3-3fd971f48658
+  :results:
+
+    thal translated : id   
+  [[0. 0. 1.]
+   [0. 1. 0.]
+   [0. 0. 1.]
+   [0. 0. 1.]
+   [0. 0. 1.]]
+  :end:
+
+  カテゴリを埋め込み表現の形で数値にするには次のようにできます。
+  #+NAME: 54b07a90-10e6-42a5-820b-8fc78f1871e2
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    thal_embedding  = tf.feature_column.embedding_column(thal, dimension=8)
+    demo(thal_embedding, 'thal translated : embedding')
+  #+END_SRC
+  
+  #+RESULTS: 54b07a90-10e6-42a5-820b-8fc78f1871e2
+  :results:
+
+  thal translated : embedding
+  [[ 0.14676373  0.7035026  -0.31148094  0.25406128 -0.30605322 -0.08454019
+     0.06461193 -0.44948855]
+   [ 0.38746998  0.18014196  0.22760512 -0.16196883  0.57284135 -0.18531832
+    -0.09443034  0.29434735]
+   [ 0.14676373  0.7035026  -0.31148094  0.25406128 -0.30605322 -0.08454019
+     0.06461193 -0.44948855]
+   [ 0.14676373  0.7035026  -0.31148094  0.25406128 -0.30605322 -0.08454019
+     0.06461193 -0.44948855]
+   [ 0.14676373  0.7035026  -0.31148094  0.25406128 -0.30605322 -0.08454019
+     0.06461193 -0.44948855]]
+  :end:
+
+  カテゴリをハッシュ化して数値にするには次のようにできます。
+  #+NAME: 5385cf61-6a6e-4d22-bba1-ca9e2fbc36df
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    thal_hashed = tf.feature_column.categorical_column_with_hash_bucket(
+        'thal', hash_bucket_size=10)
+    demo(tf.feature_column.indicator_column(thal_hashed),
+         'thal translated: hashing')
+  #+END_SRC
+
+  #+RESULTS: 5385cf61-6a6e-4d22-bba1-ca9e2fbc36df
+  :results:
+
+  thal translated: hashing 
+  [[0. 0. 0. 0. 1. 0. 0. 0. 0. 0.]
+   [0. 0. 0. 1. 0. 0. 0. 0. 0. 0.]
+   [0. 0. 0. 0. 1. 0. 0. 0. 0. 0.]
+   [0. 0. 0. 0. 1. 0. 0. 0. 0. 0.]
+   [0. 0. 0. 0. 1. 0. 0. 0. 0. 0.]]
+  :end:
+
+  学習に用いる列要素を選択します。
+  #+NAME: 93ddd0f8-6500-4d9d-b4c2-1becbf774a68
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    feature_columns = []
+    # numeric cols
+    for header in ['age', 'trestbps', 'chol', 'thalach', 'oldpeak', 'slope', 'ca']:
+        feature_columns.append(tf.feature_column.numeric_column(header))
+
+    # bucketized cols
+    age_buckets = tf.feature_column.bucketized_column(
+        age, boundaries=[18, 25, 30, 35, 40, 45, 50, 55, 60, 65])
+    feature_columns.append(age_buckets)
+
+    # indicator cols
+    thal = tf.feature_column.categorical_column_with_vocabulary_list(
+        'thal', ['fixed', 'normal', 'reversible'])
+    thal_one_hot = tf.feature_column.indicator_column(thal)
+
+    # embedding cols
+    thal_embedding = tf.feature_column.embedding_column(thal, dimension=8)
+    feature_columns.append(thal_embedding)
+
+    # crossed_cols
+    crossed_feature = tf.feature_column.crossed_column([age_buckets, thal],
+                                                       hash_bucket_size=1000)
+    crossed_feature = tf.feature_column.indicator_column(crossed_feature)
+    feature_columns.append(crossed_feature)
+  #+END_SRC
+
+  #+RESULTS: 93ddd0f8-6500-4d9d-b4c2-1becbf774a68
+  :results:
+  :end:
+
+* Keras Layer を作る
+  入力される tf.data からモデルに注入するものを取り出すための keras.layer を作成します。
+#+NAME: f6bd04fa-6279-4502-afaa-916f5b88cd27
+#+BEGIN_SRC ein-python :session localhost :results raw drawer
+feature_layer = tf.keras.layers.DenseFeatures(feature_columns)
+#+END_SRC
+
+#+RESULTS: f6bd04fa-6279-4502-afaa-916f5b88cd27
+:results:
+:end:
+
+データを分割します。
+#+NAME: 5b949e93-0b84-4883-8355-308fa96fa5e7
+#+BEGIN_SRC ein-python :session localhost :results raw drawer
+  batch_size = 32
+  train_ds = df_to_dataset(train, batch_size=batch_size)
+  val_ds = df_to_dataset(val, shuffle=False, batch_size=batch_size)
+  test_ds = df_to_dataset(test, shuffle=False, batch_size=batch_size)
+#+END_SRC
+
+#+RESULTS: 5b949e93-0b84-4883-8355-308fa96fa5e7
+:results:
+:end:
+
+* モデルの作成
+  #+NAME: 9ead5420-82c3-451c-85bd-ecb386b55e8b
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    model = keras.Sequential()
+    model.add(feature_layer)
+    model.add(keras.layers.Dense(128, activation='relu'))
+    model.add(keras.layers.Dense(128, activation='relu'))
+    model.add(keras.layers.Dense(1, activation='sigmoid'))
+
+
+    model.compile(optimizer='adam',
+                  loss='binary_crossentropy',
+                  metrics=['accuracy'],
+                  run_eagerly=True)
+
+    model.layers
+  #+END_SRC
+
+  #+RESULTS: 9ead5420-82c3-451c-85bd-ecb386b55e8b
+  :results:
+  [<tensorflow.python.feature_column.feature_column_v2.DenseFeatures at 0x7f8938f879d0>,
+   <tensorflow.python.keras.layers.core.Dense at 0x7f8938fc9b90>,
+   <tensorflow.python.keras.layers.core.Dense at 0x7f8938ee3f90>,
+   <tensorflow.python.keras.layers.core.Dense at 0x7f8938eded50>]
+  :end:
+
+* モデルの訓練
+  #+NAME: 47545f39-1eb7-4ea4-827c-a98143caecdf
+  #+BEGIN_SRC ein-python :session localhost :results none drawer
+  model.fit(train_ds, validation_data=val_ds, epochs=5)
+  model.summary()
+  #+END_SRC
+
+  #+RESULTS: 47545f39-1eb7-4ea4-827c-a98143caecdf
+  :results:  
+  Epoch 1/5
+  7/7 [==============================] - 0s 31ms/step - loss: 0.5467 - accuracy: 0.7409 - val_loss: 0.4530 - val_accuracy: 0.7755
+  Epoch 2/5
+  7/7 [==============================] - 0s 33ms/step - loss: 0.4615 - accuracy: 0.7772 - val_loss: 0.4543 - val_accuracy: 0.7755
+  Epoch 3/5
+  7/7 [==============================] - 0s 32ms/step - loss: 0.5187 - accuracy: 0.7461 - val_loss: 0.4503 - val_accuracy: 0.7755
+  Epoch 4/5
+  7/7 [==============================] - 0s 31ms/step - loss: 0.3989 - accuracy: 0.8238 - val_loss: 0.4905 - val_accuracy: 0.7755
+  Epoch 5/5
+  7/7 [==============================] - 0s 31ms/step - loss: 0.5288 - accuracy: 0.7720 - val_loss: 0.4374 - val_accuracy: 0.7551
+  Model: "sequential_14"
+  _________________________________________________________________
+  Layer (type)                 Output Shape              Param #   
+  =================================================================
+  dense_features_24 (DenseFeat multiple                  24        
+  _________________________________________________________________
+  dense_34 (Dense)             multiple                  131456    
+  _________________________________________________________________
+  dense_35 (Dense)             multiple                  16512     
+  _________________________________________________________________
+  dense_36 (Dense)             multiple                  129       
+  =================================================================
+  Total params: 148,121
+  Trainable params: 148,121
+  Non-trainable params: 0
+  _________________________________________________________________
+  :end:
+
+* モデルの評価
+  #+NAME: 83a44c4d-f65d-48c8-9a9e-1aa2fdc925f7
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    loss, accuracy = model.evaluate(test_ds)
+    print_infos([
+        '{:^20}:{}'.format('Accuracy', accuracy)
+    ])
+  #+END_SRC
+
+  #+RESULTS: 83a44c4d-f65d-48c8-9a9e-1aa2fdc925f7
+  :results:
+  2/2 [==============================] - 0s 16ms/step - loss: 0.5109 - accuracy: 0.7541
+      Accuracy      :0.7540983557701111
+  :end:
+

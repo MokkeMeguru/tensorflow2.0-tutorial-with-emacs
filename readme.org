@@ -75,20 +75,20 @@
 
 * Setup Tensorflow Environment
   1. Generate Virtualenvironment ~python -m venv venv~ at your working directory
-   2. ~source venv/bin/activate~
-   3. ~pip install tensorflow-gpu==2.0.0-beta~
-   4. check Correctly install Tensorflow and check GPU Support
-      #+CAPTION: Your terminal in which the virtualenv is activated 
-      #+begin_src shell
-      python
-      >> import tensorflow as tf
-      >> print("Success" if tf.add(1, 2).numpy() == 3 else "Fail")
-      >> exit()
-      #+end_src
+  2. ~source venv/bin/activate~
+  3. ~pip install tensorflow-gpu==2.0.0-beta1 tensorflow_hub==0.4.0 tensorflow-datasets~
+  4. check Correctly install Tensorflow and check GPU Support
+     #+CAPTION: Your terminal in which the virtualenv is activated 
+     #+begin_src shell
+     python
+     >> import tensorflow as tf
+     >> print("Success" if tf.add(1, 2).numpy() == 3 else "Fail")
+     >> exit()
+     #+end_src
       
-      Did you see some logs which contain some messages and find "Success"?
+     Did you see some logs which contain some messages and find "Success"?
       
-      #+CAPTION messages (example)
+     #+CAPTION messages (example)
 |-------------------------------------------------------|
 | messages                                              |
 |-------------------------------------------------------|

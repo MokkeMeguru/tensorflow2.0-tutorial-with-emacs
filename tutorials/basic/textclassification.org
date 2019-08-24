@@ -1,0 +1,271 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t
+#+title: 文書分類
+#+date: <2019-08-24 土>
+#+author: MokkeMeguru
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+  #+NAME: 08bb0ced-8cbe-4e1f-8d8f-0a03de9e4b5c
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    from __future__ import division, absolute_import
+    from __future__ import print_function, unicode_literals
+    from functools import reduce
+
+    import tensorflow as tf
+    import tensorflow_hub as hub
+    import tensorflow_datasets as tfds
+
+    from tensorflow import keras
+
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+
+    def print_infos(infolist: list):
+        for info in infolist:
+            print(info)
+
+
+    print_infos([
+        'tensorflow\'s version           : {}'.format(tf.__version__),
+        'tensorflow hub\'s  version: {}'.format(hub.__version__)
+    ])
+  #+END_SRC
+
+  #+RESULTS: 08bb0ced-8cbe-4e1f-8d8f-0a03de9e4b5c
+  :results:
+  tensorflow's version           : 2.0.0-beta1
+  tensorflow hub's  version: 0.4.0
+  :end:
+
+* データセットのダウンロード
+  今回はIMDB データセットを用いて自然言語のクラス分類(極性判定)を行います。まずはデータセットをダウンロードします。
+  
+  #+NAME: fc9a3bca-4ad4-4225-9627-7b2baf4c4320
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    train_validation_split = tfds.Split.TRAIN.subsplit([6, 4])
+    (train_data, validation_data), test_data = tfds.load(
+        name='imdb_reviews',
+        split=(train_validation_split, tfds.Split.TEST),
+        as_supervised=True
+    )
+  #+END_SRC
+
+  #+RESULTS: fc9a3bca-4ad4-4225-9627-7b2baf4c4320
+  :results:
+  :end:
+
+
+  データの例を示します。
+  #+NAME: 4f9b3fba-afb4-4b9d-acef-957cdcac4de5
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    train_example_batch, train_labels_batch = next(iter(train_data.batch(3)))
+    print_infos([
+        "example data\n", "{:^20}:{:^10}".format("text", "label"),
+        "{:-^31}".format('')
+    ] + list(
+        map(
+            lambda x: "{:^20}:{:^10}".format(x[0].decode('utf-8'), x[1].decode(
+                'utf-8')),
+            np.array([
+                list(map(lambda x: x[0:20], train_example_batch.numpy())),
+                train_labels_batch.numpy()
+            ]).transpose().tolist())))
+  #+END_SRC
+
+  #+RESULTS: 4f9b3fba-afb4-4b9d-acef-957cdcac4de5
+  :results:
+  example data
+
+          text        :  label   
+  -------------------------------
+  As a lifelong fan of:    1     
+  Oh yeah! Jenna James:    1     
+  I saw this film on T:    1     
+  :end:
+  
+  単語埋め込みを tensorflow hub から引っ張ってきます。使うデータは　Swivel行列因子分解法を用いて 130GB の英語のテキストデータ (Google News) を訓練したものです。
+  #+NAME: 6818c898-6ec8-4aa5-adb6-69d4c995f90f
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    embedding = 'https://tfhub.dev/google/tf2-preview/gnews-swivel-20dim/1'
+    hub_layer = hub.KerasLayer(embedding,
+                               input_shape=[],
+                               dtype=tf.string,
+                               trainable=True)
+    hub_layer(train_example_batch[:3])
+  #+END_SRC
+
+  #+RESULTS: 6818c898-6ec8-4aa5-adb6-69d4c995f90f
+  :results:
+  <tf.Tensor: id=404, shape=(3, 20), dtype=float32, numpy=
+  array([[ 3.9819887 , -4.4838037 ,  5.177359  , -2.3643482 , -3.2938678 ,
+          -3.5364532 , -2.4786978 ,  2.5525482 ,  6.688532  , -2.3076782 ,
+          -1.9807833 ,  1.1315885 , -3.0339816 , -0.7604128 , -5.743445  ,
+           3.4242578 ,  4.790099  , -4.03061   , -5.992149  , -1.7297493 ],
+         [ 3.4232912 , -4.230874  ,  4.1488533 , -0.29553518, -6.802391  ,
+          -2.5163853 , -4.4002395 ,  1.905792  ,  4.7512794 , -0.40538004,
+          -4.3401685 ,  1.0361497 ,  0.9744097 ,  0.71507156, -6.2657013 ,
+           0.16533905,  4.560262  , -1.3106939 , -3.1121316 , -2.1338716 ],
+         [ 3.8508697 , -5.003031  ,  4.8700504 , -0.04324996, -5.893603  ,
+          -5.2983093 , -4.004676  ,  4.1236343 ,  6.267754  ,  0.11632943,
+          -3.5934832 ,  0.8023905 ,  0.56146765,  0.9192484 , -7.3066816 ,
+           2.8202746 ,  6.2000837 , -3.5709393 , -4.564525  , -2.305622  ]],
+        dtype=float32)>
+  :end:
+
+* モデルの作成
+  #+NAME: ecf6be87-d2eb-452a-bc3b-c7f1067e88cc
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    model = tf.keras.Sequential()
+    model.add(hub_layer)
+    model.add(tf.keras.layers.Dense(16, activation='relu'))
+    model.add(tf.keras.layers.Dense(1, activation='sigmoid'))
+
+
+    # class MyModel(keras.Model):
+    #     def __init__(self, embedding):
+    #         super(MyModel, self).__init__()
+    #         self.embedding = embedding
+    #         self.d1 = keras.layers.Dense(16, activation='relu')
+    #         self.d2 = keras.layers.Dense(1, activation='sigmoid')
+
+    #     def call(self, x):
+    #         print(x.shape)
+    #         return reduce(lambda x, f: f(x), [x, self.embedding, self.d1, self.d2])
+
+
+    # model = MyModel(hub_layer)
+
+    model.summary()
+   #+END_SRC
+
+   #+RESULTS: ecf6be87-d2eb-452a-bc3b-c7f1067e88cc
+   :results:
+   Model: "sequential_1"
+   _________________________________________________________________
+   Layer (type)                 Output Shape              Param #   
+   =================================================================
+   keras_layer (KerasLayer)     (None, 20)                400020    
+   _________________________________________________________________
+   dense_2 (Dense)              (None, 16)                336       
+   _________________________________________________________________
+   dense_3 (Dense)              (None, 1)                 17        
+   =================================================================
+   Total params: 400,373
+   Trainable params: 400,373
+   Non-trainable params: 0
+   _________________________________________________________________
+   :end:
+
+  #+NAME: b61d3c33-e79b-4290-81a0-cecfd11501fa
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    model.compile(optimizer='adam',
+                  loss='binary_crossentropy',
+                  metrics=['accuracy'])
+  #+END_SRC
+
+  #+RESULTS: b61d3c33-e79b-4290-81a0-cecfd11501fa
+  :results:
+  :end:
+
+* モデルの訓練
+  #+NAME: 84b14d2a-acda-46f5-b6f9-a9bd6566ced2
+  #+BEGIN_SRC ein-python :session localhost :results none drawer :exports both
+    history = model.fit(train_data.shuffle(10000).batch(512),
+                        epochs=20,
+                        validation_data=validation_data.batch(512),
+                        verbose=1)
+  #+END_SRC
+
+  #+RESULTS: 84b14d2a-acda-46f5-b6f9-a9bd6566ced2
+  :results:
+  30/30 [==============================] - 2s 79ms/step - loss: 0.7145 - accuracy: 0.5367 - val_loss: 0.0000e+00 - val_accuracy: 0.0000e+00
+  Epoch 2/20
+  30/30 [==============================] - 2s 59ms/step - loss: 0.6235 - accuracy: 0.6729 - val_loss: 0.5968 - val_accuracy: 0.7000
+  Epoch 3/20
+  30/30 [==============================] - 2s 58ms/step - loss: 0.5742 - accuracy: 0.7175 - val_loss: 0.5577 - val_accuracy: 0.7265
+  Epoch 4/20
+  30/30 [==============================] - 2s 59ms/step - loss: 0.5314 - accuracy: 0.7510 - val_loss: 0.5192 - val_accuracy: 0.7537
+  Epoch 5/20
+  30/30 [==============================] - 2s 57ms/step - loss: 0.4886 - accuracy: 0.7811 - val_loss: 0.4832 - val_accuracy: 0.7786
+  Epoch 6/20
+  30/30 [==============================] - 2s 57ms/step - loss: 0.4476 - accuracy: 0.8057 - val_loss: 0.4511 - val_accuracy: 0.7966
+  Epoch 7/20
+  30/30 [==============================] - 2s 57ms/step - loss: 0.4105 - accuracy: 0.8258 - val_loss: 0.4239 - val_accuracy: 0.8137
+  Epoch 8/20
+  30/30 [==============================] - 2s 57ms/step - loss: 0.3778 - accuracy: 0.8424 - val_loss: 0.4008 - val_accuracy: 0.8264
+  Epoch 9/20
+  30/30 [==============================] - 2s 58ms/step - loss: 0.3486 - accuracy: 0.8569 - val_loss: 0.3811 - val_accuracy: 0.8355
+  Epoch 10/20
+  30/30 [==============================] - 2s 57ms/step - loss: 0.3226 - accuracy: 0.8707 - val_loss: 0.3646 - val_accuracy: 0.8432
+  Epoch 11/20
+  30/30 [==============================] - 2s 58ms/step - loss: 0.2993 - accuracy: 0.8822 - val_loss: 0.3510 - val_accuracy: 0.8496
+  Epoch 12/20
+  30/30 [==============================] - 2s 56ms/step - loss: 0.2784 - accuracy: 0.8911 - val_loss: 0.3397 - val_accuracy: 0.8556
+  Epoch 13/20
+  30/30 [==============================] - 2s 58ms/step - loss: 0.2595 - accuracy: 0.8993 - val_loss: 0.3304 - val_accuracy: 0.8604
+  Epoch 14/20
+  30/30 [==============================] - 2s 57ms/step - loss: 0.2423 - accuracy: 0.9065 - val_loss: 0.3229 - val_accuracy: 0.8634
+  Epoch 15/20
+  30/30 [==============================] - 2s 57ms/step - loss: 0.2265 - accuracy: 0.9141 - val_loss: 0.3170 - val_accuracy: 0.8658
+  Epoch 16/20
+  30/30 [==============================] - 2s 57ms/step - loss: 0.2119 - accuracy: 0.9215 - val_loss: 0.3123 - val_accuracy: 0.8663
+  Epoch 17/20
+  30/30 [==============================] - 2s 57ms/step - loss: 0.1984 - accuracy: 0.9276 - val_loss: 0.3089 - val_accuracy: 0.8691
+  Epoch 18/20
+  30/30 [==============================] - 2s 58ms/step - loss: 0.1858 - accuracy: 0.9330 - val_loss: 0.3065 - val_accuracy: 0.8691
+  Epoch 19/20
+  30/30 [==============================] - 2s 57ms/step - loss: 0.1740 - accuracy: 0.9387 - val_loss: 0.3050 - val_accuracy: 0.8709
+  Epoch 20/20
+  30/30 [==============================] - 2s 57ms/step - loss: 0.1630 - accuracy: 0.9437 - val_loss: 0.3045 - val_accuracy: 0.8724
+
+
+  Last executed 2019-08-24T21:41:32 in 36.0s
+  :end:
+
+  
+* モデルの評価
+  #+NAME: 1413a843-a818-42dd-b590-01a8cdf78688
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    results = model.evaluate(test_data.batch(512), verbose=0)
+    for name, value in zip(model.metrics_names, results):
+        print("%s: %.3f" % (name, value))
+  #+END_SRC
+
+  #+RESULTS: 1413a843-a818-42dd-b590-01a8cdf78688
+  :results:
+  loss: 0.326
+  accuracy: 0.858
+  :end:
+
