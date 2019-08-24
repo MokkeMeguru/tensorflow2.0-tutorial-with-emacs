@@ -1,3 +1,5 @@
 .ein-python.ipynb
 /.ipynb_checkpoints/
 /venv/
+/.nil.ipynb
+/tutorials/.ipynb_checkpoints/

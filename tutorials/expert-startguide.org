@@ -1,0 +1,178 @@
+#+options: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t
+#+title: エキスパートのための Tensorflow 2.0 入門
+#+date: <2019-08-24 土>
+#+author: MokkeMeguru
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+* TensorFlow ライブラリのインポート
+  #+NAME: 85bc4299-c34c-4f5d-8d10-cc20c5df1a2f
+  #+BEGIN_SRC ein-python :session localhost :results org drawer :exports code
+    from __future__ import division, absolute_import
+    from __future__ import print_function, unicode_literals
+    from functools import reduce
+
+    import tensorflow as tf
+    from tensorflow.keras.layers import Dense, Flatten, Conv2D
+    from tensorflow.keras import Model
+  #+END_SRC
+
+  #+RESULTS: 85bc4299-c34c-4f5d-8d10-cc20c5df1a2f
+  :results:
+  :end:
+
+* MNIST データセットの前処理
+** データセットの読み込み
+
+  #+NAME: 0d9589d8-002e-4af2-a164-3277d452ee56
+  #+BEGIN_SRC ein-python :session localhost :results org drawer :exports code :cache yes
+    mnist = tf.keras.datasets.mnist
+    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    x_train, x_test = x_train / 255.0, x_test / 255.0
+
+    x_train = x_train[..., tf.newaxis]
+    x_test = x_test[..., tf.newaxis]
+  #+END_SRC
+
+  #+RESULTS: 0d9589d8-002e-4af2-a164-3277d452ee56
+  :results:
+  :end:
+
+** データセットのシャッフル・バッチ化
+   #+NAME: 877929db-dde2-412d-bdf9-5e5302366996
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both :cache yes
+     train_ds = tf.data.Dataset.from_tensor_slices(
+         (x_train, y_train)).shuffle(10000).batch(32)
+     test_ds = tf.data.Dataset.from_tensor_slices((x_test, y_test)).batch(32)
+     print("dataset", train_ds)
+   #+END_SRC
+
+   #+RESULTS: 877929db-dde2-412d-bdf9-5e5302366996
+   :results:
+   dataset <BatchDataset shapes: ((None, 28, 28, 1), (None,)), types: (tf.float64, tf.uint8)>
+   :end:
+
+* Keras モデルの作成
+  #+NAME: af629887-cf24-45f3-a329-bc7c256d30f0
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports code :cache yes
+    class MyModel(Model):
+        def __init__(self):
+            super(MyModel, self).__init__()
+            self.conv1 = Conv2D(32, 3, activation='relu')
+            self.flatten = Flatten()
+            self.d1 = Dense(128, activation='relu')
+            self.d2 = Dense(10, activation='softmax')
+
+        def call(self, x):
+            return reduce(lambda x, f: f(x),
+                          [x, self.conv1, self.flatten, self.d1, self.d2])
+
+
+    model = MyModel()
+  #+END_SRC
+
+  #+RESULTS: af629887-cf24-45f3-a329-bc7c256d30f0
+  :results:
+  :end:
+
+* 最適関数と損失関数の作成
+  #+NAME: 7d1e2f1d-604b-4096-91be-1403519245e5
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports code :cache yes
+    loss_object = tf.keras.losses.SparseCategoricalCrossentropy()
+    optimizer = tf.keras.optimizers.Adam()
+  #+END_SRC
+
+  #+RESULTS: 7d1e2f1d-604b-4096-91be-1403519245e5
+  :results:
+  :end:
+
+* 訓練時のログの作成
+  #+NAME: 3459187f-93e7-4819-927a-b2b911890cbe
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports code :cache yes
+    train_loss = tf.keras.metrics.Mean(name='train_loss')
+    train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
+        name='train_accuracy')
+
+    test_loss = tf.keras.metrics.Mean(name='test_loss')
+    test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
+        name='test_accuracy')
+  #+END_SRC
+
+  #+RESULTS: 3459187f-93e7-4819-927a-b2b911890cbe
+  :results:
+  :end:
+
+* モデルの訓練
+** 訓練時の1ステップを定義
+  #+NAME: 0c248821-cce0-4ad0-8d87-3549fe6057ba
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports code :cache yes
+    @tf.function
+    def train_step(image, label):
+      with tf.GradientTape() as tape:
+        predictions = model(image)
+        loss = loss_object(label, predictions)
+        gradients = tape.gradient(loss, model.trainable_variables)
+        optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+
+      train_loss(loss)
+      train_accuracy(label, predictions)
+  #+END_SRC
+
+  #+RESULTS: 0c248821-cce0-4ad0-8d87-3549fe6057ba
+  :results:
+  :end:
+
+** テスト時の1ステップを定義
+   #+NAME: ee15d55b-b35d-474e-98b7-0a29681c97e1
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports code :cache yes
+     @tf.function
+     def test_step(image, label):
+         predictions = model(image)
+         t_loss = loss_object(label, predictions)
+
+         test_loss(t_loss)
+         test_accuracy(label, predictions)
+   #+END_SRC
+
+   #+RESULTS: ee15d55b-b35d-474e-98b7-0a29681c97e1
+   :results:
+   :end:
+
+** モデルを訓練する
+   #+NAME: c352062f-fe99-4ec5-88fb-b0ed56de3c9b
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both :cache yes
+     EPOCHS = 5
+
+     for epoch in range(EPOCHS):
+         for image, label in train_ds:
+             train_step(image, label)
+
+         for test_image, test_label in test_ds:
+             test_step(test_image, test_label)
+
+         template = 'Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, Test Accuracy: {}'
+         print(
+             template.format(epoch + 1, train_loss.result(),
+                             train_accuracy.result() * 100, test_loss.result(),
+                             test_accuracy.result() * 100))
+   #+END_SRC
+
+   #+RESULTS: c352062f-fe99-4ec5-88fb-b0ed56de3c9b
+   :results:
+   Epoch 1, Loss: 0.13997508585453033, Accuracy: 95.88833618164062, Test Loss: 0.05941373482346535, Test Accuracy: 98.07999420166016
+
+   Epoch 2, Loss: 0.09076591581106186, Accuracy: 97.31749725341797, Test Loss: 0.0561540313065052, Test Accuracy: 98.16999816894531
+
+   Epoch 3, Loss: 0.0670061856508255, Accuracy: 98.01944732666016, Test Loss: 0.05636085942387581, Test Accuracy: 98.22000122070312
+
+   Epoch 4, Loss: 0.05373571813106537, Accuracy: 98.40916442871094, Test Loss: 0.058592963963747025, Test Accuracy: 98.25250244140625
+
+   Epoch 5, Loss: 0.04474747180938721, Accuracy: 98.67033386230469, Test Loss: 0.060871466994285583, Test Accuracy: 98.2699966430664
+   :end:
+
+   
