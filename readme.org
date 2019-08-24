@@ -140,14 +140,14 @@
      
      In *src block*, *C-c C-c* sis evaluate block
 #+NAME: d8fc8392-fdb7-44ab-9d6b-a618e7a5db55
-#+BEGIN_SRC ein-python :session localhost :results raw  drawer
+#+BEGIN_SRC ein-python :session localhost :results raw  drawer :export both
 import tensorflow as tf
 tf.add(1, 2)
 #+END_SRC
 
 #+RESULTS: d8fc8392-fdb7-44ab-9d6b-a618e7a5db55
 :RESULTS:
-<tf.Tensor: id=18, shape=(), dtype=int32, numpy=3>
+<tf.Tensor: id=22, shape=(), dtype=int32, numpy=3>
 :END:
 
 * Tensorflow with raw python file
