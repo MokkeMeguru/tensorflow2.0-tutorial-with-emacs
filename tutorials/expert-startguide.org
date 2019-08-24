@@ -1,3 +1,4 @@
+# -*- org-export-babel-evaluate: nil -*-
 #+options: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline author:t
 #+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
 #+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
@@ -10,19 +11,45 @@
 #+select_tags: export
 #+exclude_tags: noexport
 #+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+
 * TensorFlow ライブラリのインポート
-  #+NAME: 85bc4299-c34c-4f5d-8d10-cc20c5df1a2f
-  #+BEGIN_SRC ein-python :session localhost :results org drawer :exports code
+    #+NAME: d2d1180c-234c-4cff-983c-4396cf56f9da
+    #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports code :cache yes
     from __future__ import division, absolute_import
     from __future__ import print_function, unicode_literals
     from functools import reduce
+    from tqdm import tqdm
 
     import tensorflow as tf
     from tensorflow.keras.layers import Dense, Flatten, Conv2D
     from tensorflow.keras import Model
   #+END_SRC
 
-  #+RESULTS: 85bc4299-c34c-4f5d-8d10-cc20c5df1a2f
+  #+RESULTS: d2d1180c-234c-4cff-983c-4396cf56f9da
   :results:
   :end:
 
@@ -45,7 +72,7 @@
 
 ** データセットのシャッフル・バッチ化
    #+NAME: 877929db-dde2-412d-bdf9-5e5302366996
-   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both :cache yes
+   #+BEGIN_SRC ein-python :session localhost :results drawer :exports both :cache yes
      train_ds = tf.data.Dataset.from_tensor_slices(
          (x_train, y_train)).shuffle(10000).batch(32)
      test_ds = tf.data.Dataset.from_tensor_slices((x_test, y_test)).batch(32)
@@ -56,6 +83,7 @@
    :results:
    dataset <BatchDataset shapes: ((None, 28, 28, 1), (None,)), types: (tf.float64, tf.uint8)>
    :end:
+   
 
 * Keras モデルの作成
   #+NAME: af629887-cf24-45f3-a329-bc7c256d30f0
@@ -109,70 +137,68 @@
 
 * モデルの訓練
 ** 訓練時の1ステップを定義
-  #+NAME: 0c248821-cce0-4ad0-8d87-3549fe6057ba
-  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports code :cache yes
-    @tf.function
-    def train_step(image, label):
-      with tf.GradientTape() as tape:
-        predictions = model(image)
-        loss = loss_object(label, predictions)
-        gradients = tape.gradient(loss, model.trainable_variables)
-        optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+     #+NAME: 0c248821-cce0-4ad0-8d87-3549fe6057ba
+     #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports code :cache yes
+       @tf.function
+       def train_step(image, label):
+         with tf.GradientTape() as tape:
+           predictions = model(image)
+           loss = loss_object(label, predictions)
+           gradients = tape.gradient(loss, model.trainable_variables)
+           optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
-      train_loss(loss)
-      train_accuracy(label, predictions)
-  #+END_SRC
+         train_loss(loss)
+         train_accuracy(label, predictions)
+     #+END_SRC
 
-  #+RESULTS: 0c248821-cce0-4ad0-8d87-3549fe6057ba
-  :results:
-  :end:
+     #+RESULTS: 0c248821-cce0-4ad0-8d87-3549fe6057ba
+     :results:
+     :end:
 
 ** テスト時の1ステップを定義
-   #+NAME: ee15d55b-b35d-474e-98b7-0a29681c97e1
-   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports code :cache yes
-     @tf.function
-     def test_step(image, label):
-         predictions = model(image)
-         t_loss = loss_object(label, predictions)
+      #+NAME: ee15d55b-b35d-474e-98b7-0a29681c97e1
+      #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports code :cache yes
+        @tf.function
+        def test_step(image, label):
+            predictions = model(image)
+            t_loss = loss_object(label, predictions)
 
-         test_loss(t_loss)
-         test_accuracy(label, predictions)
-   #+END_SRC
+            test_loss(t_loss)
+            test_accuracy(label, predictions)
+      #+END_SRC
 
-   #+RESULTS: ee15d55b-b35d-474e-98b7-0a29681c97e1
-   :results:
-   :end:
+      #+RESULTS: ee15d55b-b35d-474e-98b7-0a29681c97e1
+      :results:
+      :end:
 
 ** モデルを訓練する
-   #+NAME: c352062f-fe99-4ec5-88fb-b0ed56de3c9b
-   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both :cache yes
-     EPOCHS = 5
+#+NAME: f84f45e3-4017-49e1-92ba-1b77a14d1090
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both :cache yes
+  EPOCHS = 5
 
-     for epoch in range(EPOCHS):
-         for image, label in train_ds:
-             train_step(image, label)
+  for epoch in range(EPOCHS):
+      for image, label in train_ds:
+          train_step(image, label)
 
-         for test_image, test_label in test_ds:
-             test_step(test_image, test_label)
+      for test_image, test_label in test_ds:
+          test_step(test_image, test_label)
 
-         template = 'Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, Test Accuracy: {}'
-         print(
-             template.format(epoch + 1, train_loss.result(),
-                             train_accuracy.result() * 100, test_loss.result(),
-                             test_accuracy.result() * 100))
-   #+END_SRC
+      template = 'Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, Test Accuracy: {}'
+      print(
+          template.format(epoch + 1, train_loss.result(),
+                          train_accuracy.result() * 100, test_loss.result(),
+                          test_accuracy.result() * 100))
+#+END_SRC
 
-   #+RESULTS: c352062f-fe99-4ec5-88fb-b0ed56de3c9b
-   :results:
-   Epoch 1, Loss: 0.13997508585453033, Accuracy: 95.88833618164062, Test Loss: 0.05941373482346535, Test Accuracy: 98.07999420166016
+#+RESULTS: f84f45e3-4017-49e1-92ba-1b77a14d1090
+:results:
+Epoch 1, Loss: 0.1349046528339386, Accuracy: 95.96833801269531, Test Loss: 0.07161739468574524, Test Accuracy: 97.69999694824219
 
-   Epoch 2, Loss: 0.09076591581106186, Accuracy: 97.31749725341797, Test Loss: 0.0561540313065052, Test Accuracy: 98.16999816894531
+Epoch 2, Loss: 0.08821088820695877, Accuracy: 97.36000061035156, Test Loss: 0.06225990131497383, Test Accuracy: 98.0
 
-   Epoch 3, Loss: 0.0670061856508255, Accuracy: 98.01944732666016, Test Loss: 0.05636085942387581, Test Accuracy: 98.22000122070312
+Epoch 3, Loss: 0.06569895893335342, Accuracy: 98.02166748046875, Test Loss: 0.05950223654508591, Test Accuracy: 98.15666961669922
 
-   Epoch 4, Loss: 0.05373571813106537, Accuracy: 98.40916442871094, Test Loss: 0.058592963963747025, Test Accuracy: 98.25250244140625
+Epoch 4, Loss: 0.05297775939106941, Accuracy: 98.38541412353516, Test Loss: 0.061324529349803925, Test Accuracy: 98.16999816894531
 
-   Epoch 5, Loss: 0.04474747180938721, Accuracy: 98.67033386230469, Test Loss: 0.060871466994285583, Test Accuracy: 98.2699966430664
-   :end:
-
-   
+Epoch 5, Loss: 0.04419006407260895, Accuracy: 98.64633178710938, Test Loss: 0.06336682289838791, Test Accuracy: 98.18800354003906
+:end:

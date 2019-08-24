@@ -3,3 +3,14 @@
 /venv/
 /.nil.ipynb
 /tutorials/.ipynb_checkpoints/
+_minted*/
+.nil.ipynb
+*.bcf
+*.dvi
+*.log
+*.out
+*.aux
+/tutorials/advanced.ipynb
+*.toc
+*.tex
+*.run.xml

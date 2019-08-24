@@ -123,7 +123,7 @@
   1. install some python package for complementation and syntax checking
      #+CAPTION: Your terminal in which the virtualenv is activated 
      #+BEGIN_SRC shell
-     pip install jedi rope autopep8 yapf black flake8 jupyter
+     pip install jedi rope autopep8 yapf black flake8 jupyter tqdm
      #+END_SRC
 
   2. activation virtualenv in your emacs ~M-x pyvenv-activate [RET] <your virtualenv path>~
