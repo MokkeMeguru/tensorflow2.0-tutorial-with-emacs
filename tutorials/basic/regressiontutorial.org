@@ -309,7 +309,7 @@ _________________________________________________________________
 
 動作するかテストのバッチデータを作成して確認を行う。
 #+NAME: 1cfeb959-7135-46b5-9fa7-eff34d49e963
-#+BEGIN_SRC ein-python :session localhost :results raw drawer
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
   example_batch = normalized_train_data[:10]
   example_result = model.predict(example_batch)
   example_result
