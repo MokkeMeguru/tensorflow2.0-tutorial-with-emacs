@@ -16,3 +16,4 @@ _minted*/
 *.run.xml
 .ipynb_checkpoints/
 ltximg/
+.ein.ipynb
