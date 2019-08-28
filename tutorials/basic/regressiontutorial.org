@@ -1,0 +1,525 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: 回帰分析
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+  #+NAME: 08bb0ced-8cbe-4e1f-8d8f-0a03de9e4b5c
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    from __future__ import division, absolute_import
+    from __future__ import print_function, unicode_literals
+    from functools import reduce
+
+    import tensorflow as tf
+    import tensorflow_hub as hub
+
+    from tensorflow import keras
+    from tensorflow.keras import layers
+    
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    import pandas as pd
+    # from sklearn.model_selection import train_test_split
+    import seaborn as sns
+
+    def print_infos(infolist: list):
+        for info in infolist:
+            print(info)
+
+
+    print_infos([
+        '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+    ])
+  #+END_SRC
+
+  #+RESULTS: 08bb0ced-8cbe-4e1f-8d8f-0a03de9e4b5c
+  :results:
+  tensorflow's version     : 2.0.0-beta1
+  :end:
+* データセットのダウンロード
+  #+NAME: c5342413-0fc0-44d0-9cd8-d17c081c74b6
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    dataset_path = keras.utils.get_file(
+        'auto-mpg.data',
+        'https://archive.ics.uci.edu/ml/machine-learning-databases/auto-mpg/auto-mpg.data'
+    )
+    print_infos(['{:25}:{}'.format('dataset path', dataset_path)])
+
+    column_names = [
+        'MPG', 'Cylinders', 'Displacement', 'Horsepower', 'Weight', 'Acceleration',
+        'Model Year', 'Origin'
+    ]
+
+    raw_dataset = pd.read_csv(dataset_path,
+                              names=column_names,
+                              na_values='?',
+                              comment='\t',
+                              sep=' ',
+                              skipinitialspace=True)
+    dataset = raw_dataset.copy()
+    dataset.tail()
+  #+END_SRC
+
+  #+RESULTS: c5342413-0fc0-44d0-9cd8-d17c081c74b6
+  :results:
+  dataset path             :/home/meguru/.keras/datasets/auto-mpg.data
+
+|-----+------+-----------+--------------+------------+--------+--------------+-------------+--------|
+|     |  MPG | Cylinders | Displacement | Horsepower | Weight | Acceleration | Model  Year | Origin |
+|-----+------+-----------+--------------+------------+--------+--------------+-------------+--------|
+| 393 | 27.0 |         4 |        140.0 |       86.0 | 2790.0 |         15.6 |          82 |      1 |
+| 394 | 44.0 |         4 |         97.0 |       52.0 | 2130.0 |         24.6 |          82 |      2 |
+| 395 | 32.0 |         4 |        135.0 |       84.0 | 2295.0 |         11.6 |          82 |      1 |
+| 396 | 28.0 |         4 |        120.0 |       79.0 | 2625.0 |         18.6 |          82 |      1 |
+| 397 | 31.0 |         4 |        119.0 |       82.0 | 2720.0 |         19.4 |          82 |      1 |
+|-----+------+-----------+--------------+------------+--------+--------------+-------------+--------|
+  :end:
+  
+  欠損データの確認
+#+NAME: 734b8a10-55bd-4b96-b489-0f0b1af1fafa
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  dataset = raw_dataset.copy()
+  print_infos(['raw:', dataset.isna().sum(), '\n'])
+
+  # 欠損データの破棄
+  dataset = dataset.dropna()
+
+  print_infos(['preprocessed:', dataset.isna().sum(), '\n'])
+
+  # Origin はカテゴリを表す id ([1, 2, 3] = [USA, Europe, Japan])
+  origin = dataset.pop('Origin')
+
+  # 距離を正しく示すためにカテゴリラベルを one-hot に変換
+  dataset['USA'] = (origin == 1) * 1.0
+  dataset['Europe'] = (origin == 2) * 1.0
+  dataset['Japan'] = (origin == 3) * 1.0
+
+  print_infos(['keys', dataset.tail()])
+#+END_SRC
+
+#+RESULTS: 734b8a10-55bd-4b96-b489-0f0b1af1fafa
+:results:
+raw:
+MPG             0
+Cylinders       0
+Displacement    0
+Horsepower      6
+Weight          0
+Acceleration    0
+Model Year      0
+Origin          0
+dtype: int64
+
+
+preprocessed:
+MPG             0
+Cylinders       0
+Displacement    0
+Horsepower      0
+Weight          0
+Acceleration    0
+Model Year      0
+Origin          0
+dtype: int64
+
+
+keys
+|-----+------+-----------+--------------+------------+--------+--------------+------------+--------|
+|     |  MPG | Cylinders | Displacement | Horsepower | Weight | Acceleration | Model Year | Origin |
+|-----+------+-----------+--------------+------------+--------+--------------+------------+--------|
+| 393 | 27.0 |         4 |        140.0 |       86.0 | 2790.0 |         15.6 |         82 |      1 |
+| 394 | 44.0 |         4 |         97.0 |       52.0 | 2130.0 |         24.6 |         82 |      2 |
+| 395 | 32.0 |         4 |        135.0 |       84.0 | 2295.0 |         11.6 |         82 |      1 |
+| 396 | 28.0 |         4 |        120.0 |       79.0 | 2625.0 |         18.6 |         82 |      1 |
+| 397 | 31.0 |         4 |        119.0 |       82.0 | 2720.0 |         19.4 |         82 |      1 |
+|-----+------+-----------+--------------+------------+--------+--------------+------------+--------|
+:end:
+
+* データセットの分割と視覚化
+  #+NAME: 48e3bf0b-73a3-450a-8454-575af68a1a1b
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    train_dataset = dataset.sample(frac=0.8, random_state=0)
+    test_dataset = dataset.drop(train_dataset.index)
+
+    # 散布図行列 の表示
+    sns.pairplot(train_dataset[['MPG', 'Cylinders', 'Displacement', 'Weight']], diag_kind='kde')
+  #+END_SRC
+
+  #+RESULTS: 48e3bf0b-73a3-450a-8454-575af68a1a1b
+  :results:
+  <seaborn.axisgrid.PairGrid at 0x7fbaf00c3910>
+  [[file:ein-images/ob-ein-4da04f4d7f5223c19aba4ec9656a6ece.png]]
+  :end:
+
+  #+NAME: 54a1943a-b4fd-4b77-ba1b-5fc6be45cb84
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    train_stats = train_dataset.describe()
+    train_stats.pop('MPG')
+    train_stats = train_stats.transpose()
+    train_stats
+  #+END_SRC
+
+  #+RESULTS: 54a1943a-b4fd-4b77-ba1b-5fc6be45cb84
+  :results:
+                count         mean         std     min      25%     50%  \
+  Cylinders     314.0     5.477707    1.699788     3.0     4.00     4.0   
+  Displacement  314.0   195.318471  104.331589    68.0   105.50   151.0   
+  Horsepower    314.0   104.869427   38.096214    46.0    76.25    94.5   
+  Weight        314.0  2990.251592  843.898596  1649.0  2256.50  2822.5   
+  Acceleration  314.0    15.559236    2.789230     8.0    13.80    15.5   
+  Model Year    314.0    75.898089    3.675642    70.0    73.00    76.0   
+  USA           314.0     0.624204    0.485101     0.0     0.00     1.0   
+  Europe        314.0     0.178344    0.383413     0.0     0.00     0.0   
+  Japan         314.0     0.197452    0.398712     0.0     0.00     0.0   
+
+                    75%     max  
+  Cylinders        8.00     8.0  
+  Displacement   265.75   455.0  
+  Horsepower     128.00   225.0  
+  Weight        3608.00  5140.0  
+  Acceleration    17.20    24.8  
+  Model Year      79.00    82.0  
+  USA              1.00     1.0  
+  Europe           0.00     1.0  
+  Japan            0.00     1.0  
+  :end:
+
+  |----------------+-------+-------------+------------+--------+---------+--------+---------+--------|
+  |                | count |        mean |        std |    min |     25% |    50% |     75% |    max |
+  |----------------+-------+-------------+------------+--------+---------+--------+---------+--------|
+  | Cylinders      | 314.0 |    5.477707 |   1.699788 |    3.0 |    4.00 |    4.0 |    8.00 |    8.0 |
+  | Displacement   | 314.0 |  195.318471 | 104.331589 |   68.0 |  105.50 |  151.0 |  265.75 |  455.0 |
+  | Horsepower     | 314.0 |  104.869427 |  38.096214 |   46.0 |   76.25 |   94.5 |  128.00 |  225.0 |
+  | Weight         | 314.0 | 2990.251592 | 843.898596 | 1649.0 | 2256.50 | 2822.5 | 3608.00 | 5140.0 |
+  | Acceleration   | 314.0 |   15.559236 |   2.789230 |    8.0 |   13.80 |   15.5 |   17.20 |   24.8 |
+  | Model     Year | 314.0 |   75.898089 |   3.675642 |   70.0 |   73.00 |   76.0 |   79.00 |   82.0 |
+  | USA            | 314.0 |    0.624204 |   0.485101 |    0.0 |    0.00 |    1.0 |    1.00 |    1.0 |
+  | Europe         | 314.0 |    0.178344 |   0.383413 |    0.0 |    0.00 |    0.0 |    0.00 |    1.0 |
+  | Japan          | 314.0 |    0.197452 |   0.398712 |    0.0 |    0.00 |    0.0 |    0.00 |    1.0 |
+  |----------------+-------+-------------+------------+--------+---------+--------+---------+--------|
+  
+
+  説明変数と従属変数の分割
+
+  #+NAME: cb11c8b9-d5e9-4a2e-ac11-ed0ab880f126
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    train_labels, test_labels = train_dataset.pop('MPG'), test_dataset.pop('MPG')
+  #+END_SRC
+
+  #+RESULTS: cb11c8b9-d5e9-4a2e-ac11-ed0ab880f126
+  :results:
+  :end:
+
+  
+  データセットの正規化
+  
+  #+NAME: 516895bd-8361-4722-997e-12f44b907a3e
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    # Although we intentionally generate these statistics from only the training dataset,
+    # these statistics will also be used to normalize the test dataset.
+    # We need to do that to project the test dataset into the same distribution that the model has been trained on.
+    def norm(x):
+        return (x - train_stats['mean']) / train_stats['std']
+
+
+    normalized_train_data = norm(train_dataset)
+    normalized_test_data = norm(test_dataset)
+  #+END_SRC
+
+  #+RESULTS: 516895bd-8361-4722-997e-12f44b907a3e
+  :results:
+  :end:
+
+* モデルの作成
+#+NAME: ee653920-0f72-4a2e-a6a0-01717eb5b5ba
+#+BEGIN_SRC ein-python :session localhost :results raw drawer
+  def build_model():
+      model = keras.Sequential([
+          layers.Dense(64,
+                       activation='relu',
+                       input_shape=[len(train_dataset.keys())]),
+          layers.Dense(64, activation='relu'),
+          layers.Dense(1)
+      ])
+      optimizer = tf.keras.optimizers.RMSprop(0.001)
+      model.compile(loss='mse', optimizer=optimizer, metrics=['mae', 'mse'])
+      return model
+#+END_SRC
+
+#+RESULTS: ee653920-0f72-4a2e-a6a0-01717eb5b5ba
+:results:
+:end:
+
+#+NAME: 3a5c1038-a0b3-47bd-8d43-c493e672e44f
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  model = build_model()
+  model.summary()
+#+END_SRC
+
+#+RESULTS: 3a5c1038-a0b3-47bd-8d43-c493e672e44f
+:results:
+Model: "sequential_5"
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+dense_56 (Dense)             (None, 64)                640       
+_________________________________________________________________
+dense_57 (Dense)             (None, 64)                4160      
+_________________________________________________________________
+dense_58 (Dense)             (None, 1)                 65        
+=================================================================
+Total params: 4,865
+Trainable params: 4,865
+Non-trainable params: 0
+_________________________________________________________________
+:end:
+
+動作するかテストのバッチデータを作成して確認を行う。
+#+NAME: 1cfeb959-7135-46b5-9fa7-eff34d49e963
+#+BEGIN_SRC ein-python :session localhost :results raw drawer
+  example_batch = normalized_train_data[:10]
+  example_result = model.predict(example_batch)
+  example_result
+#+END_SRC
+
+#+RESULTS: 1cfeb959-7135-46b5-9fa7-eff34d49e963
+:results:
+array([[ 0.13859312],
+       [-0.06514297],
+       [-0.7194522 ],
+       [-0.18754408],
+       [ 0.14318699],
+       [ 0.08752605],
+       [ 0.09818709],
+       [-1.0392619 ],
+       [ 0.03446161],
+       [ 0.05452929]], dtype=float32)
+:end:
+
+* モデルの訓練
+#+NAME: b07c0dce-9814-40ab-a170-79cf5c5e874f
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  class PrintDot(keras.callbacks.Callback):
+      def __init__(self, endEpoch):
+          super().__init__()
+          self.endEpoch = endEpoch
+
+      def on_epoch_end(self, epoch, logs):
+          if epoch == self.endEpoch - 1: print('[Info] End Training!')
+          if epoch % 100 == 0: print('[Processing] next 100 epochs start ..')
+
+
+  EPOCHS = 1000
+  history = model.fit(normalized_train_data,
+                      train_labels,
+                      epochs=EPOCHS,
+                      validation_split=0.2,
+                      verbose=0,
+                      callbacks=[PrintDot(endEpoch=EPOCHS)])
+#+END_SRC
+
+#+RESULTS: b07c0dce-9814-40ab-a170-79cf5c5e874f
+:results:
+[Processing] next 100 epochs start ..
+
+[Processing] next 100 epochs start ..
+
+[Processing] next 100 epochs start ..
+
+[Processing] next 100 epochs start ..
+
+[Processing] next 100 epochs start ..
+
+[Processing] next 100 epochs start ..
+
+[Processing] next 100 epochs start ..
+
+[Processing] next 100 epochs start ..
+
+[Processing] next 100 epochs start ..
+
+[Processing] next 100 epochs start ..
+
+[Info] End Training!
+:end:
+
+* 訓練後のモデルの観察
+#+NAME: 9d21cc71-c0fc-4424-a820-5520749e1661
+#+BEGIN_SRC ein-python :session localhost :results raw drawer
+  hist = pd.DataFrame(history.history)
+  hist['epoch'] = history.epoch
+  hist.tail()
+#+END_SRC
+
+#+RESULTS: 9d21cc71-c0fc-4424-a820-5520749e1661
+:results:
+         loss       mae       mse  val_loss   val_mae   val_mse  epoch
+995  2.822836  1.032528  2.822836  9.237935  2.374856  9.237935    995
+996  2.581665  1.042289  2.581665  9.101119  2.358805  9.101119    996
+997  2.547408  1.036258  2.547408  9.213714  2.398474  9.213714    997
+998  2.787521  1.092058  2.787521  9.644386  2.476959  9.644386    998
+999  2.717538  1.107942  2.717538  9.111179  2.346545  9.111179    999
+:end:
+
+|-----+----------+----------+----------+-----------+----------+-----------+-------|
+|     |     loss |      mae |      mse |  val_loss |  val_mae |   val_mse | epoch |
+|-----+----------+----------+----------+-----------+----------+-----------+-------|
+| 995 | 0.547079 | 0.448572 | 0.547079 | 16.064828 | 2.762767 | 16.064827 |   995 |
+| 996 | 0.530740 | 0.429667 | 0.530740 | 16.857235 | 2.751170 | 16.857235 |   996 |
+| 997 | 0.737233 | 0.581803 | 0.737233 | 15.852767 | 2.754877 | 15.852768 |   997 |
+| 998 | 0.830963 | 0.607468 | 0.830963 | 15.449620 | 2.808410 | 15.449621 |   998 |
+| 999 | 0.472539 | 0.404946 | 0.472539 | 16.179743 | 2.879873 | 16.179743 |   999 |
+|-----+----------+----------+----------+-----------+----------+-----------+-------|
+
+#+NAME: 4847acf9-664a-4ca7-8d9c-7194cf51bf01
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  def plot_history(history):
+      hist = pd.DataFrame(history.history)
+      hist['epoch'] = history.epoch
+      # MAE https://mathwords.net/rmsemae
+      plt.figure()
+      plt.xlabel('Epoch')
+      plt.ylabel('MAE [MPG]')
+      plt.plot(hist['epoch'], hist['mae'], label='Train Error')
+      plt.plot(hist['epoch'], hist['val_mae'], label='Val Error')
+      plt.ylim([0, 5])
+      plt.legend()
+
+      plt.figure()
+      plt.xlabel('Epoch')
+      plt.ylabel('MSE [$MPG^2]')
+      plt.plot(hist['epoch'], hist['mse'],
+               label='Train Error')
+      plt.plot(hist['epoch'], hist['val_mse'],
+               label ='Val Error')
+      plt.ylim([0, 20])
+      plt.legend()
+      plt.show()
+plot_history(history)
+#+END_SRC
+
+#+RESULTS: 4847acf9-664a-4ca7-8d9c-7194cf51bf01
+:results:
+[[file:ein-images/ob-ein-f8c89ee365698c7b2a8ebc64e9a79251.png]]
+[[file:ein-images/ob-ein-c10763dad5eee16c589c8789f7f938de.png]]
+:end:
+
+* Early Stoppingを用いて訓練を行う
+#+NAME: d0fdd239-ce91-434f-8623-13d877c49bee
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  class PrintDot_v2(keras.callbacks.Callback):
+      def __init__(self):
+          super().__init__()
+
+      def on_epoch_end(self, epoch, logs):
+          if epoch % 10 == 0: print('.', end='')
+          if (epoch != 0) and (epoch % 100 == 0): print('')
+
+
+  model = build_model()
+
+  # Early Stopping
+  # 詳細は https://www.tensorflow.org/versions/master/api_docs/python/tf/keras/callbacks/EarlyStopping
+  early_stop = keras.callbacks.EarlyStopping(monitor='val_loss', patience=10)
+  history = model.fit(normalized_train_data,
+                      train_labels,
+                      epochs=EPOCHS,
+                      validation_split=0.2,
+                      verbose=0,
+                      callbacks=[early_stop, PrintDot_v2()])
+
+  plot_history(history)
+#+END_SRC
+
+#+RESULTS: d0fdd239-ce91-434f-8623-13d877c49bee
+:results:
+..
+.
+..
+.
+.
+[[file:ein-images/ob-ein-326e1e57e75257cbcc3e5dc10f8b0802.png]]
+[[file:ein-images/ob-ein-c10763dad5eee16c589c8789f7f938de.png]]
+:end:
+
+#+NAME: e3f9f1b2-c080-4967-8eef-45076062e4b3
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  loss, mae, mse = model.evaluate(normalized_test_data, test_labels, verbose=0)
+  print('Testing set Mean Abs Error: {:5.2f} MPG'.format(mae))
+#+END_SRC
+
+#+RESULTS: e3f9f1b2-c080-4967-8eef-45076062e4b3
+:results:
+Testing set Mean Abs Error:  1.86 MPG
+:end:
+
+* モデルを用いた推論
+真の値と予測した値のプロット
+#+NAME: ac195e53-2d4c-4a5f-98dc-a89a0377aeec
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  test_predictions = model.predict(normalized_test_data).flatten()
+
+  plt.scatter(test_labels, test_predictions)
+  plt.xlabel('True Values [MPG]')
+  plt.ylabel('Predictions [MPG]')
+  plt.axis('equal')
+  plt.axis('square')
+  plt.xlim([0, plt.xlim()[1]])
+  plt.ylim([0, plt.ylim()[1]])
+  _ = plt.plot([-100, 100], [-100, 100])
+#+END_SRC
+
+#+RESULTS: ac195e53-2d4c-4a5f-98dc-a89a0377aeec
+:results:
+[[file:ein-images/ob-ein-22ac57006e74c155845b2b5d9613daf2.png]]
+:end:
+
+
+誤差の分布のプロット
+#+NAME: a587c0ea-4274-4d85-b18e-79f156761616
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  error = test_predictions - test_labels
+  plt.hist(error, bins=25)
+  plt.xlabel('Prediction Error [MPG]')
+  _ = plt.ylabel('Count')
+#+END_SRC
+
+#+RESULTS: a587c0ea-4274-4d85-b18e-79f156761616
+:results:
+[[file:ein-images/ob-ein-085da3984498c29be97223e4cebb1b73.png]]
+:end:
+
+誤差が正規分布に従っているわけではないですが、サンプル数が非常に少ない場合はこのようになることがある。
