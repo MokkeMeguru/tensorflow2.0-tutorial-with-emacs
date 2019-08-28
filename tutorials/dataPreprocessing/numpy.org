@@ -1,0 +1,157 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: Numpy の読み込み
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+    from __future__ import division, absolute_import
+    from __future__ import print_function, unicode_literals
+    from functools import reduce, partial
+
+    import tensorflow as tf
+    # import tensorflow_hub as hub
+
+    from tensorflow import keras
+    from tensorflow.keras import layers
+
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    import pandas as pd
+    # from sklearn.model_selection import train_test_split
+    # import seaborn as sns
+    import os
+    # import yaml
+    # import h5py
+
+    def print_infos(infolist: list):
+        for info in infolist:
+            print(info)
+
+
+    print_infos([
+        '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+    ])
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-beta1
+  :end:
+* データのインポート
+  #+NAME: 8da10755-4106-4ea3-8b43-4450f13f12f7
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    DATA_URL = 'https://storage.googleapis.com/tensorflow/tf-keras-datasets/mnist.npz'
+    path = tf.keras.utils.get_file('mnist.npz', DATA_URL)
+    with np.load(path) as data:
+        train_examples = data['x_train']
+        train_labels = data['y_train']
+        test_examples = data['x_test']
+        test_labels = data['y_test']
+  #+END_SRC
+
+  #+RESULTS: 8da10755-4106-4ea3-8b43-4450f13f12f7
+  :results:
+  :end:
+
+  #+NAME: cc054709-031d-4000-aa1d-561bb3323462
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    train_dataset = tf.data.Dataset.from_tensor_slices(
+        (train_examples, train_labels))
+    test_dataset = tf.data.Dataset.from_tensor_slices((test_examples, test_labels))
+
+    BATCH_SIZE = 64
+    SHUFFLE_BUFFER_SIZE = 100
+    train_dataset = train_dataset.shuffle(SHUFFLE_BUFFER_SIZE).batch(BATCH_SIZE)
+    test_dataset = test_dataset.batch(BATCH_SIZE)
+  #+END_SRC
+
+  #+RESULTS: cc054709-031d-4000-aa1d-561bb3323462
+  :results:
+  :end:
+* モデルの作成
+  #+NAME: 0a183460-ae49-44d4-ba37-29aa92bcd556
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    model = keras.Sequential([
+        layers.Flatten(input_shape=(28, 28)),
+        layers.Dense(128, activation='relu'),
+        layers.Dense(10, activation='softmax')
+    ])
+
+    model.compile(optimizer=keras.optimizers.RMSprop(),
+                  loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+                  metrics=[keras.metrics.SparseCategoricalAccuracy()])
+
+    model.summary ()
+  #+END_SRC
+
+  #+RESULTS: 0a183460-ae49-44d4-ba37-29aa92bcd556
+  :results:
+  Model: "sequential_5"
+  _________________________________________________________________
+  Layer (type)                 Output Shape              Param #   
+  =================================================================
+  flatten_1 (Flatten)          (None, 784)               0         
+  _________________________________________________________________
+  dense_14 (Dense)             (None, 128)               100480    
+  _________________________________________________________________
+  dense_15 (Dense)             (None, 10)                1290      
+  =================================================================
+  Total params: 101,770
+  Trainable params: 101,770
+  Non-trainable params: 0
+  _________________________________________________________________
+  :end:
+* モデルの訓練
+#+NAME: 57bd044e-1a79-4c83-bc0b-5d44db6ee734
+#+BEGIN_SRC ein-python :session localhost :results none
+  model.fit(train_dataset, epochs=10)
+#+END_SRC
+
+#+RESULTS: 57bd044e-1a79-4c83-bc0b-5d44db6ee734
+Epoch 10/10
+938/938 [==============================] - 2s 2ms/step - loss: 2.8479 - sparse_categorical_accuracy: 0.8217
+* モデルの評価
+  #+NAME: 071cef1b-b925-4a2d-875a-f9477b580be7
+  #+BEGIN_SRC ein-python :session localhost :results none
+    model.evaluate(test_dataset)
+  #+END_SRC
+
+  #+RESULTS: 071cef1b-b925-4a2d-875a-f9477b580be7
+  
+  [2.7918751384042633, 0.8258]
+

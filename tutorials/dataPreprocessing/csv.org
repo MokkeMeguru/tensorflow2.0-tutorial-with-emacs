@@ -3,7 +3,7 @@
 #+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
 #+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
 #+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
-#+title: 過剰適合と学習不足(overfitting and underfitting)
+#+title: CSV ファイルの読み込み
 #+date: <2019-08-24 土>                                                                                           
 #+author: MokkeMeguru                                                                                             
 #+email: meguru.mokke@gmail.com
