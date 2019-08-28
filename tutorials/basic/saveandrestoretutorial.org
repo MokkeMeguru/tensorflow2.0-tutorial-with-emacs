@@ -1,0 +1,380 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: 過剰適合と学習不足(overfitting and underfitting)
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+  #+NAME: 45d7839c-e0db-41f8-a659-b85d2f83a416
+  #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+    from __future__ import division, absolute_import
+    from __future__ import print_function, unicode_literals
+    from functools import reduce
+
+    import tensorflow as tf
+    # import tensorflow_hub as hub
+
+    from tensorflow import keras
+    from tensorflow.keras import layers
+
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    # import pandas as pd
+    # from sklearn.model_selection import train_test_split
+    # import seaborn as sns
+    import os
+    import yaml
+    import h5py
+
+    def print_infos(infolist: list):
+        for info in infolist:
+            print(info)
+
+
+    print_infos([
+        '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+    ])
+  #+END_SRC
+
+  #+RESULTS: 45d7839c-e0db-41f8-a659-b85d2f83a416
+  :results:
+  tensorflow's version     : 2.0.0-beta1
+  :end:
+
+* データのインポート
+  #+NAME: c4f9a561-052c-4e09-80b5-ebc69d9d2e6b
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    (train_images, train_labels), (test_images,
+                                   test_labels) = keras.datasets.mnist.load_data()
+    train_labels = train_labels[:1000]
+    test_labels = test_labels[:1000]
+    plt.figure()
+    plt.imshow(train_images[0])
+    plt.colorbar()
+    plt.grid(False)
+    plt.show()
+
+    train_images = train_images[:1000].reshape(-1, 28 * 28) / 255.0
+    test_images = test_images[:1000].reshape(-1, 28 * 28) / 255.0
+  #+END_SRC
+
+  #+RESULTS: c4f9a561-052c-4e09-80b5-ebc69d9d2e6b
+  :results:
+  [[file:ein-images/ob-ein-551f6ef0b7fb28c7f1d27e0cf3614c61.png]]
+  :end:
+
+* モデルの作成
+  #+NAME: 0455388c-4d6d-48f1-a4dd-022ce39a9358
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    def build_model():
+        model = keras.models.Sequential([
+            layers.Dense(512, activation='relu', input_shape=(784, )),
+            layers.Dropout(0.2),
+            layers.Dense(10, activation='softmax')
+        ])
+
+        model.compile(optimizer='adam',
+                      loss='sparse_categorical_crossentropy',
+                      metrics=['accuracy'])
+
+        return model
+
+
+    model = build_model()
+
+    model.summary()
+  #+END_SRC
+
+  #+RESULTS: 0455388c-4d6d-48f1-a4dd-022ce39a9358
+  :results:
+  Model: "sequential_15"
+  _________________________________________________________________
+  Layer (type)                 Output Shape              Param #   
+  =================================================================
+  dense_47 (Dense)             (None, 512)               401920    
+  _________________________________________________________________
+  dropout_2 (Dropout)          (None, 512)               0         
+  _________________________________________________________________
+  dense_48 (Dense)             (None, 10)                5130      
+  =================================================================
+  Total params: 407,050
+  Trainable params: 407,050
+  Non-trainable params: 0
+  _________________________________________________________________
+  :end:
+
+* モデルの保存
+  チェックポイントについてのコールバックを作成して、それを学習時に追加します。
+  #+NAME: 6d1f54f1-5fc9-4082-9e08-5d7f348a24a5
+  #+BEGIN_SRC ein-python :session localhost :results none
+    checkpoint_path = 'training_1/cp.ckpt'
+    chackpoint_dir = os.path.dirname(checkpoint_path)
+
+    # Create a callback that saves the model's weights
+    cp_callback = keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
+                                                   save_weights_only=True,
+                                                   verbose=1)
+
+    # Train the model with the new callback
+    model.fit(train_images,
+              train_labels,
+              epochs=10,
+              validation_data=(test_images, test_labels),
+              callbacks=[cp_callback])
+    # Pass callback to training
+
+    # This may generate warnings related to saving the state of the optimizer.
+    # These warnings (and similar warnings throughout this notebook)
+    # are in place to discourage outdated usage, and can be ignored.
+  #+END_SRC
+
+  #+RESULTS: 6d1f54f1-5fc9-4082-9e08-5d7f348a24a5
+
+
+  #+begin_src shell :exports both
+  ls training_1
+  #+end_src
+
+  #+RESULTS:
+  | checkpoint                  |
+  | cp.ckpt.data-00000-of-00002 |
+  | cp.ckpt.data-00001-of-00002 |
+  | cp.ckpt.index               |
+
+* モデルの復元
+  未学習のモデルと学習済みのモデルで推論を行ってみます。
+  #+NAME: 872412b6-7ccc-4b94-b922-21f6cb651e81
+  #+BEGIN_SRC ein-python :session localhost :results none
+    model = build_model()
+    u_loss, u_acc = model.evaluate(test_images, test_labels)
+
+    model.load_weights(checkpoint_path)
+    r_loss, r_acc = model.evaluate(test_images, test_labels)
+  #+END_SRC
+
+  #+RESULTS: 872412b6-7ccc-4b94-b922-21f6cb651e81
+
+
+  #+NAME: f21010a5-ea8c-43b4-ad0d-62e9a9a4682b
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    print_infos([
+        'Untrained model:',
+        '{:20}:{:5.2f}%'.format('accuracy', 100 * u_acc),
+        '\n',
+        'Restored model:',
+        '{:20}:{:5.2f}%'.format('accuracy', 100 * r_acc)
+    ])
+  #+END_SRC
+
+  #+RESULTS: f21010a5-ea8c-43b4-ad0d-62e9a9a4682b
+  :results:
+  Untrained model:
+  accuracy            : 6.50%
+
+
+  Restored model:
+  accuracy            :86.80%
+  :end:
+
+* チェックポイントについてのオプション
+  
+  #+NAME: ee44b69a-3eeb-4e0b-bea1-27d6493456bb
+  #+BEGIN_SRC ein-python :session localhost :results none
+    # Include the epoch in the file name (uses `str.format`)
+    checkpoint_path = "training_2/cp-{epoch:04d}.ckpt"
+    checkpoint_dir = os.path.dirname(checkpoint_path)
+
+    # Create a callback that saves the model's weights every 5 epochs
+    cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
+                                                     verbose=1,
+                                                     save_weights_only=True,
+                                                     period=5)
+
+    # Create a new model instance
+    model = build_model()
+
+    # Save the weights using the `checkpoint_path` format
+    model.save_weights(checkpoint_path.format(epoch=0))
+
+    # Train the model with the new callback
+    model.fit(train_images,
+              train_labels,
+              epochs=50,
+              callbacks=[cp_callback],
+              validation_data=(test_images, test_labels),
+              verbose=0)
+  #+END_SRC
+
+  #+RESULTS: ee44b69a-3eeb-4e0b-bea1-27d6493456bb
+
+  #+begin_src shell :exports  both
+  ls training_2
+  #+end_src
+
+  #+RESULTS:
+  | checkpoint                       |
+  | cp-0000.ckpt.data-00000-of-00002 |
+  | cp-0000.ckpt.data-00001-of-00002 |
+  | cp-0000.ckpt.index               |
+  | cp-0005.ckpt                     |
+  | cp-0005.ckpt.data-00000-of-00002 |
+  | cp-0005.ckpt.data-00001-of-00002 |
+  | cp-0005.ckpt.index               |
+  | cp-0010.ckpt                     |
+  | cp-0010.ckpt.data-00000-of-00002 |
+  | cp-0010.ckpt.data-00001-of-00002 |
+  | cp-0010.ckpt.index               |
+  | cp-0015.ckpt                     |
+  | cp-0015.ckpt.data-00000-of-00002 |
+  | cp-0015.ckpt.data-00001-of-00002 |
+  | cp-0015.ckpt.index               |
+  | cp-0020.ckpt                     |
+  | cp-0020.ckpt.data-00000-of-00002 |
+  | cp-0020.ckpt.data-00001-of-00002 |
+  | cp-0020.ckpt.index               |
+  | cp-0025.ckpt                     |
+  | cp-0025.ckpt.data-00000-of-00002 |
+  | cp-0025.ckpt.data-00001-of-00002 |
+  | cp-0025.ckpt.index               |
+  | cp-0030.ckpt                     |
+  | cp-0030.ckpt.data-00000-of-00002 |
+  | cp-0030.ckpt.data-00001-of-00002 |
+  | cp-0030.ckpt.index               |
+  | cp-0035.ckpt                     |
+  | cp-0035.ckpt.data-00000-of-00002 |
+  | cp-0035.ckpt.data-00001-of-00002 |
+  | cp-0035.ckpt.index               |
+  | cp-0040.ckpt                     |
+  | cp-0040.ckpt.data-00000-of-00002 |
+  | cp-0040.ckpt.data-00001-of-00002 |
+  | cp-0040.ckpt.index               |
+  | cp-0045.ckpt                     |
+  | cp-0045.ckpt.data-00000-of-00002 |
+  | cp-0045.ckpt.data-00001-of-00002 |
+  | cp-0045.ckpt.index               |
+  | cp-0050.ckpt                     |
+  | cp-0050.ckpt.data-00000-of-00002 |
+  | cp-0050.ckpt.data-00001-of-00002 |
+  | cp-0050.ckpt.index               |
+
+  
+  #+NAME: ea72cf67-5f42-4289-9072-2166271c5d76
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    latest = tf.train.latest_checkpoint(checkpoint_dir)
+    latest
+  #+END_SRC
+
+  #+RESULTS: ea72cf67-5f42-4289-9072-2166271c5d76
+  :results:
+  'training_2/cp-0050.ckpt'
+  :end:
+
+  #+NAME: 30b3b7e0-af8b-489e-a8e9-483a2243ea24
+  #+BEGIN_SRC ein-python :session localhost :results none
+    # Create a new model instance
+    model = build_model()
+
+    # Load the previously saved weights
+    model.load_weights(latest)
+
+    # Re-evaluate the model
+    loss, acc = model.evaluate(test_images, test_labels)
+  #+END_SRC
+
+  #+RESULTS: 30b3b7e0-af8b-489e-a8e9-483a2243ea24
+
+    #+NAME: 7a6b1b01-7430-420d-bf2d-2e54ccdeb346
+    #+BEGIN_SRC ein-python :session localhost :results raw drawer
+      print_infos([
+          "Restored model, accuracy: {:5.2f}%".format(100* acc)
+      ])
+  #+END_SRC
+
+  #+RESULTS: 7a6b1b01-7430-420d-bf2d-2e54ccdeb346
+  :results:
+  Restored model, accuracy: 87.00%
+  :end:
+* HDFS 形式での保存・復元方法
+  HDFS形式はハイパーパラメータを含むモデル全体を保存することができます。
+  #+NAME: d2d2fb68-5cff-4fa5-9139-04c820ff6a3e
+  #+BEGIN_SRC ein-python :session localhost :results none
+    model = build_model()
+    model.fit(train_images, train_labels, epochs =5)
+    model.save('my_model.h5')
+  #+END_SRC
+
+  #+RESULTS: d2d2fb68-5cff-4fa5-9139-04c820ff6a3e
+
+  保存したモデルを復元します。
+  #+NAME: 43cc852b-9e13-4e2e-bbc5-9373f0bc8214
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    restored_model = keras.models.load_model('my_model.h5')
+    restored_model.summary()
+  #+END_SRC
+
+  #+RESULTS: 43cc852b-9e13-4e2e-bbc5-9373f0bc8214
+  :results:
+  Model: "sequential_33"
+  _________________________________________________________________
+  Layer (type)                 Output Shape              Param #   
+  =================================================================
+  dense_83 (Dense)             (None, 512)               401920    
+  _________________________________________________________________
+  dropout_20 (Dropout)         (None, 512)               0         
+  _________________________________________________________________
+  dense_84 (Dense)             (None, 10)                5130      
+  =================================================================
+  Total params: 407,050
+  Trainable params: 407,050
+  Non-trainable params: 0
+  _________________________________________________________________
+  :end:
+
+  精度について確認します。
+  #+NAME: e5dfc7de-1664-4153-9d80-db1204f9eb0b
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    loss, acc =  restored_model.evaluate(test_images, test_labels)
+    print_infos([
+        '{:25}:{:5.2f}'.format('Restored model', 100 * acc)
+    ])
+  #+END_SRC
+
+  #+RESULTS: e5dfc7de-1664-4153-9d80-db1204f9eb0b
+  :results:
+    32/1000 [..............................] - ETA: 0s - loss: 0.2112 - accuracy: 0.9375
+  1000/1000 [==============================] - 0s 24us/sample - loss: 0.4271 - accuracy: 0.8620
+
+  Restored model           :86.20
+  :end:

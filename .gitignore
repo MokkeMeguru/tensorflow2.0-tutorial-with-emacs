@@ -17,3 +17,6 @@ _minted*/
 .ipynb_checkpoints/
 ltximg/
 .ein.ipynb
+*.h5
+tutorials/basic/training_1/
+tutorials/basic/training_2/
