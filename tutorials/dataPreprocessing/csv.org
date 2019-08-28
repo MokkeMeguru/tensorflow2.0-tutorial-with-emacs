@@ -40,7 +40,7 @@
     #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
     from __future__ import division, absolute_import
     from __future__ import print_function, unicode_literals
-    from functools import reduce
+    from functools import reduce, partial
 
     import tensorflow as tf
     # import tensorflow_hub as hub
@@ -51,10 +51,10 @@
     import numpy as np
     import matplotlib.pyplot as plt
 
-    # import pandas as pd
+    import pandas as pd
     # from sklearn.model_selection import train_test_split
     # import seaborn as sns
-    # import os
+    import os
     # import yaml
     # import h5py
 
@@ -72,28 +72,468 @@
   :results:
   tensorflow's version     : 2.0.0-beta1
   :end:
+
 * データのダウンロード
   #+NAME: ba22b941-3756-440b-9178-cc28299adfd5
   #+BEGIN_SRC ein-python :session localhost :results none
     TRAIN_DATA_URL = 'https://storage.googleapis.com/tf-datasets/titanic/train.csv'
     TEST_DATA_URL = 'https://storage.googleapis.com/tf-datasets/titanic/eval.csv'
 
-    train_file_path = keras.utils.get_file('train.csv', TRAIN_DATA_URL)
-    test_file_path = keras.utils.get_file('eval.csv', TEST_DATA_URL)
+    train_file_path = keras.utils.get_file(os.path.abspath('train.csv'), TRAIN_DATA_URL)
+    test_file_path = keras.utils.get_file(os.path.abspath('eval.csv'), TEST_DATA_URL)
 
     # Make numpy values easier to read
     np.set_printoptions(precision=3, suppress=True)
   #+END_SRC
 
   #+RESULTS: ba22b941-3756-440b-9178-cc28299adfd5
+
 * データの読み込み
   #+begin_src shell :exports both
   head train.csv
   #+end_src
 
   #+RESULTS:
+  | survived | sex    |  age | n_siblings_spouses | parch |    fare | class  | deck    | embark_town | alone |
+  |        0 | male   | 22.0 |                  1 |     0 |    7.25 | Third  | unknown | Southampton | n     |
+  |        1 | female | 38.0 |                  1 |     0 | 71.2833 | First  | C       | Cherbourg   | n     |
+  |        1 | female | 26.0 |                  0 |     0 |   7.925 | Third  | unknown | Southampton | y     |
+  |        1 | female | 35.0 |                  1 |     0 |    53.1 | First  | C       | Southampton | n     |
+  |        0 | male   | 28.0 |                  0 |     0 |  8.4583 | Third  | unknown | Queenstown  | y     |
+  |        0 | male   |  2.0 |                  3 |     1 |  21.075 | Third  | unknown | Southampton | n     |
+  |        1 | female | 27.0 |                  0 |     2 | 11.1333 | Third  | unknown | Southampton | n     |
+  |        1 | female | 14.0 |                  1 |     0 | 30.0708 | Second | unknown | Cherbourg   | n     |
+  |        1 | female |  4.0 |                  1 |     1 |    16.7 | Third  | G       | Southampton | n     |
 
+  #+NAME: 638aaabe-5eb9-4f6c-beaf-7c268c61f3b2
   #+BEGIN_SRC ein-python :session localhost :results raw drawer
-
+    LABEL_COLUMN  = 'survived'
+    LABELS = [0, 1]
   #+END_SRC
+
+  #+RESULTS: 638aaabe-5eb9-4f6c-beaf-7c268c61f3b2
+  :results:
+  :end:
+
+**  データセットの生成
+#+NAME: 6ec6df1a-eb8e-415f-9bb0-b9bc508e2d1f
+#+BEGIN_SRC ein-python :session localhost :results raw drawer
+    def get_dataset(file_path, **kwargs):
+        dataset = tf.data.experimental.make_csv_dataset(
+            file_path,
+            # Artificially small to make examples easier to show.
+            batch_size=5,
+            label_name=LABEL_COLUMN,
+            na_value='?',
+            num_epochs=1,
+            ignore_errors=True,
+            ,**kwargs)
+        return dataset
+
+    raw_train_data = get_dataset(train_file_path)
+    raw_test_data = get_dataset(test_file_path)
+#+END_SRC
+
+#+RESULTS: 6ec6df1a-eb8e-415f-9bb0-b9bc508e2d1f
+:results:
+:end:
+
+生成されるバッチの確認
+#+NAME: 8de1f8c5-3bb2-48be-b2d8-41651f07767f
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  def show_batch(dataset):
+      for batch, label in dataset.take(1):
+          for key, value in batch.items():
+              print('{:20s}:   {}'.format(key, value.numpy()))
+
+  show_batch(raw_train_data)
+#+END_SRC
+
+#+RESULTS: 8de1f8c5-3bb2-48be-b2d8-41651f07767f
+:results:
+sex                 :   [b'male' b'male' b'male' b'male' b'female']
+age                 :   [27. 28. 28.  4. 28.]
+n_siblings_spouses  :   [0 1 0 4 1]
+parch               :   [0 0 0 2 0]
+fare                :   [ 7.896 15.85   8.05  31.275 24.   ]
+class               :   [b'Third' b'Third' b'Third' b'Third' b'Second']
+deck                :   [b'unknown' b'unknown' b'unknown' b'unknown' b'unknown']
+embark_town         :   [b'Southampton' b'Southampton' b'Southampton' b'Southampton' b'Cherbourg']
+alone               :   [b'y' b'n' b'y' b'n' b'n']
+:end:
+
+** 手動で列名をつける方法
+#+NAME: c53c283a-fa44-42e7-8e40-42bf7852273e
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  CSV_COLUMNS = [
+      'survived', 'sex', 'age', 'n_siblings_spouses', 'parch', 'fare', 'class',
+      'deck', 'embark_town', 'alone'
+  ]
+
+  temp_dataset = get_dataset(train_file_path, column_names=CSV_COLUMNS)
+
+  show_batch(temp_dataset)
+#+END_SRC
+
+#+RESULTS: c53c283a-fa44-42e7-8e40-42bf7852273e
+:results:
+sex                 :   [b'male' b'female' b'male' b'male' b'male']
+age                 :   [28. 19. 33. 28. 39.]
+n_siblings_spouses  :   [0 1 0 0 0]
+parch               :   [0 0 0 0 0]
+fare                :   [ 8.05 26.    9.5   8.05 26.  ]
+class               :   [b'Third' b'Second' b'Third' b'Third' b'Second']
+deck                :   [b'unknown' b'unknown' b'unknown' b'unknown' b'unknown']
+embark_town         :   [b'Southampton' b'Southampton' b'Southampton' b'Southampton'
+ b'Southampton']
+alone               :   [b'y' b'n' b'y' b'y' b'y']
+:end:
+
+** 列を選択してデータセットにする方法
+#+NAME: 40b7012f-b8f3-48e6-a32e-6787cc8c2827
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  SELECT_COLUMNS = [
+      'survived', 'age', 'n_siblings_spouses', 'class', 'deck', 'alone'
+  ]
+
+  temp_dataset = get_dataset(train_file_path, select_columns=SELECT_COLUMNS)
+
+  show_batch(temp_dataset)
+#+END_SRC
+
+#+RESULTS: 40b7012f-b8f3-48e6-a32e-6787cc8c2827
+:results:
+age                 :   [40. 15. 32. 24. 28.]
+n_siblings_spouses  :   [1 0 1 0 0]
+class               :   [b'First' b'First' b'Third' b'Third' b'Third']
+deck                :   [b'E' b'B' b'unknown' b'unknown' b'unknown']
+alone               :   [b'n' b'n' b'n' b'y' b'y']
+:end:
+
+* データの前処理
+** 数値データの前処理 1
+   数値データを列指定して取り出して別のデータセットを生成すると次のようになります。
+   #+NAME: 6cd245bb-215e-45d1-ac70-6d97efa9f97c
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     SELECT_COLUMNS = ['survived', 'age', 'n_siblings_spouses', 'parch', 'fare']
+     DEFAULTS = [0, 0.0, 0.0, 0.0, 0.0]
+     temp_dataset = get_dataset(train_file_path,
+                                select_columns=SELECT_COLUMNS,
+                                column_defaults=DEFAULTS)
+
+     show_batch(temp_dataset)
+   #+END_SRC
+
+   #+RESULTS: 6cd245bb-215e-45d1-ac70-6d97efa9f97c
+   :results:
+   age                 :   [18. 29. 28. 25. 28.]
+   n_siblings_spouses  :   [0. 1. 0. 0. 0.]
+   parch               :   [0. 0. 0. 0. 0.]
+   fare                :   [11.5    7.046  7.75   7.896 56.496]
+   :end: 
+  
+   バッチデータとして取り出すと次のようになります。
+   #+NAME: 88415536-1587-41e0-ac47-7bfd0ac85089
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     example_batch, labels_batch = next(iter(temp_dataset))
+
+
+     def pack(features, label):
+         return tf.stack(list(features.values()), axis=-1), label
+
+
+     packed_dataset = temp_dataset.map(pack)
+
+     for features, labels in packed_dataset.take(1):
+         print_infos([
+             'features',
+             features.numpy(),
+             '',
+             'labels',
+             labels.numpy()
+         ])
+   #+END_SRC
+
+   #+RESULTS: 88415536-1587-41e0-ac47-7bfd0ac85089
+   :results:
+   features
+   [[18.     0.     0.    11.5  ]
+    [29.     1.     0.     7.046]
+    [28.     0.     0.     7.75 ]
+    [25.     0.     0.     7.896]
+    [28.     0.     0.    56.496]]
+
+   labels
+   [0 0 0 0 1]
+   :end:
+** 数値データの前処理 2
+   元データをそのままに、数値データを抽出して numeric のデータに押し込みます。
+   #+NAME: bce6acbb-5178-4ec3-ba5b-9788fed90e56
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     class PackNumericFeatures():
+         def __init__(self, names):
+             self.names = names
+
+         def __call__(self, features, labels):
+             numeric_features = [features.pop(name) for name in self.names]
+             numeric_features = [
+                 tf.cast(feat, tf.float32) for feat in numeric_features
+             ]
+             numeric_features = tf.stack(numeric_features, axis=-1)
+             features['numeric'] = numeric_features
+             return features, labels
+
+
+     NUMERIC_FEATURES = ['age', 'n_siblings_spouses', 'parch', 'fare']
+     packed_train_data = raw_train_data.map(PackNumericFeatures(NUMERIC_FEATURES))
+
+     packed_test_data = raw_test_data.map(PackNumericFeatures(NUMERIC_FEATURES))
+
+     # バッチの生成
+     example_batch, labels_batch = next(iter(packed_train_data))
+     show_batch(packed_test_data)
+   #+END_SRC
+
+   #+RESULTS: bce6acbb-5178-4ec3-ba5b-9788fed90e56
+   :results:
+   sex                 :   [b'male' b'male' b'male' b'male' b'male']
+   class               :   [b'First' b'Second' b'Second' b'Third' b'First']
+   deck                :   [b'unknown' b'unknown' b'unknown' b'unknown' b'unknown']
+   embark_town         :   [b'Southampton' b'Southampton' b'Southampton' b'Queenstown' b'Cherbourg']
+   alone               :   [b'y' b'y' b'n' b'y' b'y']
+   numeric             :   [[ 62.      0.      0.     26.55 ]
+    [ 42.      0.      0.     13.   ]
+    [  0.83    1.      1.     18.75 ]
+    [ 28.      0.      0.      7.75 ]
+    [ 22.      0.      0.    135.633]]
+   :end:
+
+** 数値データ
+   数値データの観察
+   #+NAME: 55d1233f-a24a-4d52-a590-cdbb585a58ff
+   #+BEGIN_SRC ein-python :session localhost :results none
+     desc = pd.read_csv(train_file_path)[NUMERIC_FEATURES].describe()
+     desc
+   #+END_SRC
+
+   #+RESULTS: 55d1233f-a24a-4d52-a590-cdbb585a58ff
+|-------+------------+--------------------+------------+------------|
+|       |        age | n_siblings_spouses |      parch |       fare |
+|-------+------------+--------------------+------------+------------|
+| count | 627.000000 |         627.000000 | 627.000000 | 627.000000 |
+| mean  |  29.631308 |           0.545455 |   0.379585 |  34.385399 |
+| std   |  12.511818 |           1.151090 |   0.792999 |  54.597730 |
+| min   |   0.750000 |           0.000000 |   0.000000 |   0.000000 |
+| 25%   |  23.000000 |           0.000000 |   0.000000 |   7.895800 |
+| 50%   |  28.000000 |           0.000000 |   0.000000 |  15.045800 |
+| 75%   |  35.000000 |           1.000000 |   0.000000 |  31.387500 |
+| max   |  80.000000 |           8.000000 |   5.000000 | 512.329200 |
+|-------+------------+--------------------+------------+------------|
+
+   
+#+NAME: 5d30b7c6-85dd-42f3-9c5e-a7768f406009
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  MEAN = np.array(desc.T['mean'])
+  STD = np.array(desc.T['std'])
+
+
+  def normalize_numeric_data(data, mean, std):
+      # Center the data
+      return (data - mean) / std
+
+
+  normalizer = partial(normalize_numeric_data, mean=MEAN, std=STD)
+  numeric_column = tf.feature_column.numeric_column(
+      'numeric', normalizer_fn=normalizer, shape=[len(NUMERIC_FEATURES)])
+  numeric_columns = [numeric_column]
+  numeric_column
+#+END_SRC
+
+#+RESULTS: 5d30b7c6-85dd-42f3-9c5e-a7768f406009
+:results:
+NumericColumn(key='numeric', shape=(4,), default_value=None, dtype=tf.float32, normalizer_fn=functools.partial(<function normalize_numeric_data at 0x7fef200c8ef0>, mean=array([29.631,  0.545,  0.38 , 34.385]), std=array([12.512,  1.151,  0.793, 54.598])))
+:end:
+
+バッチの正規化を行うレイヤーを次に定義します。
+#+NAME: 1d6c7474-249c-4642-83e2-81071f97b439
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  numeric_layer = keras.layers.DenseFeatures(numeric_columns)
+
+  print_infos([
+      'raw:', example_batch['numeric'], '', 'preprocessed:',
+      numeric_layer(example_batch).numpy()
+  ])
+#+END_SRC
+
+#+RESULTS: 1d6c7474-249c-4642-83e2-81071f97b439
+:results:
+raw:
+tf.Tensor(
+[[27.     0.     0.     7.896]
+ [28.     1.     0.    15.85 ]
+ [28.     0.     0.     8.05 ]
+ [ 4.     4.     2.    31.275]
+ [28.     1.     0.    24.   ]], shape=(5, 4), dtype=float32)
+
+preprocessed:
+[[-0.21  -0.474 -0.479 -0.485]
+ [-0.13   0.395 -0.479 -0.339]
+ [-0.13  -0.474 -0.479 -0.482]
+ [-2.049  3.001  2.043 -0.057]
+ [-0.13   0.395 -0.479 -0.19 ]]
+:end:
+
+** カテゴリデータ
+   #+NAME: 7e178e35-8a81-4fca-b686-dabfb75f49cd
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     CATEGORIES = {
+         'sex': ['male', 'female'],
+         'class': ['First', 'Second', 'Third'],
+         'deck': ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'],
+         'alone': ['y', 'n']
+     }
+
+     categorical_columns = []
+     for feature, vocab in CATEGORIES.items():
+         cat_col = tf.feature_column.categorical_column_with_vocabulary_list(
+             key=feature, vocabulary_list=vocab)
+         categorical_columns.append(tf.feature_column.indicator_column(cat_col))
+
+         # See what you just created.
+         print_infos([
+             'categories',
+             categorical_columns
+         ])
+   #+END_SRC
+
+   #+RESULTS: 7e178e35-8a81-4fca-b686-dabfb75f49cd
+   :results:
+   categories
+   [IndicatorColumn(categorical_column=VocabularyListCategoricalColumn(key='sex', vocabulary_list=('male', 'female'), dtype=tf.string, default_value=-1, num_oov_buckets=0))]
+   categories
+   [IndicatorColumn(categorical_column=VocabularyListCategoricalColumn(key='sex', vocabulary_list=('male', 'female'), dtype=tf.string, default_value=-1, num_oov_buckets=0)), IndicatorColumn(categorical_column=VocabularyListCategoricalColumn(key='class', vocabulary_list=('First', 'Second', 'Third'), dtype=tf.string, default_value=-1, num_oov_buckets=0))]
+   categories
+   [IndicatorColumn(categorical_column=VocabularyListCategoricalColumn(key='sex', vocabulary_list=('male', 'female'), dtype=tf.string, default_value=-1, num_oov_buckets=0)), IndicatorColumn(categorical_column=VocabularyListCategoricalColumn(key='class', vocabulary_list=('First', 'Second', 'Third'), dtype=tf.string, default_value=-1, num_oov_buckets=0)), IndicatorColumn(categorical_column=VocabularyListCategoricalColumn(key='deck', vocabulary_list=('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'), dtype=tf.string, default_value=-1, num_oov_buckets=0))]
+   categories
+   [IndicatorColumn(categorical_column=VocabularyListCategoricalColumn(key='sex', vocabulary_list=('male', 'female'), dtype=tf.string, default_value=-1, num_oov_buckets=0)), IndicatorColumn(categorical_column=VocabularyListCategoricalColumn(key='class', vocabulary_list=('First', 'Second', 'Third'), dtype=tf.string, default_value=-1, num_oov_buckets=0)), IndicatorColumn(categorical_column=VocabularyListCategoricalColumn(key='deck', vocabulary_list=('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'), dtype=tf.string, default_value=-1, num_oov_buckets=0)), IndicatorColumn(categorical_column=VocabularyListCategoricalColumn(key='alone', vocabulary_list=('y', 'n'), dtype=tf.string, default_value=-1, num_oov_buckets=0))]
+   :end:
+
+   #+NAME: 9298aa81-9c5e-4c9e-b9e4-63690a3153b6
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     categorical_layer = keras.layers.DenseFeatures(categorical_columns)
+     print_infos([
+         'example batch',
+         categorical_layer(example_batch).numpy()[0]
+     ])
+   #+END_SRC
+
+   #+RESULTS: 9298aa81-9c5e-4c9e-b9e4-63690a3153b6
+   :results:
+   W0828 23:28:57.982789 140669073593984 deprecation.py:323] From /home/meguru/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/tensorflow/python/feature_column/feature_column_v2.py:2655: add_dispatch_support.<locals>.wrapper (from tensorflow.python.ops.array_ops) is deprecated and will be removed in a future version.
+   Instructions for updating:
+   Use tf.where in 2.0, which has the same broadcast rule as np.where
+
+   W0828 23:28:58.136484 140669073593984 deprecation.py:323] From /home/meguru/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/tensorflow/python/feature_column/feature_column_v2.py:4215: IndicatorColumn._variable_shape (from tensorflow.python.feature_column.feature_column_v2) is deprecated and will be removed in a future version.
+   Instructions for updating:
+   The old _FeatureColumn APIs are being deprecated. Please use the new FeatureColumn APIs instead.
+
+   W0828 23:28:58.138310 140669073593984 deprecation.py:323] From /home/meguru/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/tensorflow/python/feature_column/feature_column_v2.py:4270: VocabularyListCategoricalColumn._num_buckets (from tensorflow.python.feature_column.feature_column_v2) is deprecated and will be removed in a future version.
+   Instructions for updating:
+   The old _FeatureColumn APIs are being deprecated. Please use the new FeatureColumn APIs instead.
+
+   example batch
+   [1. 0. 0. 0. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 1. 0.]
+   :end:
+** 前処理を組み合わせ
+   #+NAME: 352a1c2e-e277-4a3c-8365-3e4f0faa9429
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     preprocessing_layer = tf.keras.layers.DenseFeatures(categorical_columns +
+                                                         numeric_columns)
+
+     print(preprocessing_layer(example_batch).numpy()[0])
+   #+END_SRC
+
+   #+RESULTS: 352a1c2e-e277-4a3c-8365-3e4f0faa9429
+   :results:
+   [ 1.     0.     0.     0.     1.     0.     0.     0.     0.     0.
+     0.     0.     0.     0.     0.    -0.21  -0.474 -0.479 -0.485  1.
+     0.   ]
+   :end:
+
+* モデルの作成
+  #+NAME: 8f743f55-8668-497b-acb9-a11aa60727e4
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    def build_model():
+        model = keras.Sequential([
+            preprocessing_layer,
+            layers.Dense(128, activation='relu'),
+            layers.Dense(128, activation='relu'),
+            layers.Dense(1, activation='sigmoid')
+        ])
+
+        model.compile(loss='binary_crossentropy',
+                      optimizer='adam',
+                      metrics=['accuracy'])
+        return model
+
+
+    model = build_model()
+    model.layers
+  #+END_SRC
+
+  #+RESULTS: 8f743f55-8668-497b-acb9-a11aa60727e4
+  :results:
+  [<tensorflow.python.feature_column.feature_column_v2.DenseFeatures at 0x7fef60054d50>,
+   <tensorflow.python.keras.layers.core.Dense at 0x7fef20077710>,
+   <tensorflow.python.keras.layers.core.Dense at 0x7fef20077a90>,
+   <tensorflow.python.keras.layers.core.Dense at 0x7fef20077dd0>]
+  :end:
+
+* モデルの訓練
+  #+NAME: 28fdeb8c-01b7-465e-b6da-51fac2975c8f
+  #+BEGIN_SRC ein-python :session localhost :results none
+    train_data = packed_train_data.shuffle(500)
+    test_data = packed_test_data
+    model.fit(train_data, epochs=20)
+  #+END_SRC
+
+  #+RESULTS: 28fdeb8c-01b7-465e-b6da-51fac2975c8f
+
+  Epoch 20/20
+  126/126 [==============================] - 0s 2ms/step - loss: 0.2981 - accuracy: 0.8756
+  
+
+  #+NAME: 45cbba9a-6b53-46e4-aa16-461cc9e3951a
+  #+BEGIN_SRC ein-python :session localhost :results none
+    test_loss, test_accuracy = model.evaluate(test_data)
+    print_infos(['Test Loss', test_loss, '', 'Test Acc', test_accuracy])
+  #+END_SRC
+
+  #+RESULTS: 45cbba9a-6b53-46e4-aa16-461cc9e3951a
+
+  Test Loss
+  0.4667719596610317
+
+  Test Acc
+  0.82954544
+  
+* モデルの予測
+  #+NAME: 2cbe1951-799d-416a-8cb9-88c2d9e2832d
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    predictions = model.predict(test_data)
+
+    # Show some results
+    for prediction, survived in zip(predictions[:10], list(test_data)[0][1][:10]):
+        print('Predicted survival: {:.2%}'.format(prediction[0]),
+              ' | Actual outcome: ', ('SURVIVED' if bool(survived) else 'DIED'))
+  #+END_SRC
+
+  #+RESULTS: 2cbe1951-799d-416a-8cb9-88c2d9e2832d
+  :results:
+  Predicted survival: 5.45%  | Actual outcome:  DIED
+  Predicted survival: 4.60%  | Actual outcome:  DIED
+  Predicted survival: 99.93%  | Actual outcome:  SURVIVED
+  Predicted survival: 15.39%  | Actual outcome:  DIED
+  Predicted survival: 1.08%  | Actual outcome:  DIED
+  :end:
 
