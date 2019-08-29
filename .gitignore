@@ -21,3 +21,5 @@ ltximg/
 tutorials/basic/training_1/
 tutorials/basic/training_2/
 *.csv
+*.tfrecords
+*.tfrecord

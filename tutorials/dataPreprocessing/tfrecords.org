@@ -1,0 +1,633 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: TFRecord の取扱い
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* Intro
+  TFRecord は データを効率的に読み取るために、データをシリアライズして保存する単純な形式です。
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+
+      from tensorflow import keras
+      from tensorflow.keras import layers
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      import pathlib
+      import random
+      import IPython.display as display
+      
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-beta1
+  :end:
+
+* tf.Example の種類
+  - tf.train.BytesList
+    - string
+    - byte
+  - tf.train.FloatList
+    - float
+    - double
+  - tf.train.Int64List
+    - bool
+    - enum
+    - int32
+    - int64
+    - uint64
+    
+* データの変換
+  #+NAME: 9a9772df-085f-4ce5-b32f-b45f9ec618cd
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    def _bytes_feature(value):
+        """Returns a bytes_list from a string / byte."""
+        if isinstance(value, type(tf.constant(0))):
+            value = value.numpy(
+            )  # BytesList won't unpack a string from an EagerTensor.
+        return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
+
+    def _float_feature(value):
+        """Returns a float_list from a float / double."""
+        return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
+
+
+    def _int64_feature(value):
+        """Returns an int64_list from a bool / enum / int / uint."""
+        return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+  #+END_SRC
+
+  #+RESULTS: 9a9772df-085f-4ce5-b32f-b45f9ec618cd
+  :results:
+  :end:
+
+  
+  #+NAME: eed028ed-b1ef-43f2-9b39-099640080a26
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    print_infos([
+        'bytes:',
+        _bytes_feature(b'test_string'),
+        _bytes_feature(u'test_bytes'.encode('utf-8')),
+        '',
+        'float',
+        _float_feature(np.exp(1)),
+        '',
+        'int',
+        _int64_feature(True),
+        _int64_feature(1)
+    ])
+  #+END_SRC
+
+  #+RESULTS: eed028ed-b1ef-43f2-9b39-099640080a26
+  :results:
+  bytes:
+  bytes_list {
+    value: "test_string"
+  }
+
+  bytes_list {
+    value: "test_bytes"
+  }
+
+
+  float
+  float_list {
+    value: 2.7182817459106445
+  }
+
+
+  int
+  int64_list {
+    value: 1
+  }
+
+  int64_list {
+    value: 1
+  }
+
+  :end:
+
+  データのシリアライズは次のように行います。
+  #+NAME: 8d58f0d6-c1db-438e-869e-3eea3cdb5db3
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    feature = _float_feature(np.exp(1))
+    serialized_feature = feature.SerializeToString()
+
+    print_infos([serialized_feature])
+  #+END_SRC
+
+  #+RESULTS: 8d58f0d6-c1db-438e-869e-3eea3cdb5db3
+  :results:
+  b'\x12\x06\n\x04T\xf8-@'
+  :end:
+
+* tf.Example のメッセージを作る
+#+NAME: 591339b6-8201-411b-8ad2-182211741385
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  # The number of observations in the dataset.
+  n_observations = int(1e4)
+
+  # Boolean feature, encoded as False or True.
+  feature0 = np.random.choice([False, True], n_observations)
+
+  # Integer feature, random from 0 to 4.
+  feature1 = np.random.randint(0, 5, n_observations)
+
+  # String feature
+  strings = np.array([b'cat', b'dog', b'chicken', b'horse', b'goat'])
+  feature2 = strings[feature1]
+
+  # Float feature, from a standard normal distribution
+  feature3 = np.random.randn(n_observations)
+
+  print_infos([
+      '{:20}:{}:\n{}\n'.format('n_observations', type(n_observations),
+                               n_observations),
+      '{:20}: {}\n{}\n'.format('feature0', type(feature0), feature0),
+      '{:20}: {}\n{}\n'.format('feaure1', type(feature1), feature1),
+      '{:20}: {}\n{}\n'.format('feature2', type(feature2), feature2),
+      '{:20}: {}\n{}\n'.format('feature3', type(feature3), feature3),
+  ])
+#+END_SRC
+
+#+RESULTS: 591339b6-8201-411b-8ad2-182211741385
+:results:
+n_observations      :<class 'int'>:
+10000
+
+feature0            : <class 'numpy.ndarray'>
+[False False False ... False False False]
+
+feaure1             : <class 'numpy.ndarray'>
+[2 3 4 ... 0 3 2]
+
+feature2            : <class 'numpy.ndarray'>
+[b'chicken' b'horse' b'goat' ... b'cat' b'horse' b'chicken']
+
+feature3            : <class 'numpy.ndarray'>
+[-1.12796233  0.0634178  -0.43297429 ... -1.2663131  -0.42462491
+ -0.73832333]
+
+:end:
+  
+シリアライズしてデコードするには次のようにします。
+#+NAME: d8f047a5-2bc4-49ff-b651-6f29444414a3
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  # example feature
+  # [False, 4 , bytes('goat'), 0.9876]
+
+
+  def serialize_example(feature0, feature1, feature2, feature3):
+      """
+    Creates a tf.Example message ready to be written to a file.
+    """
+      # Create a dictionary mapping the feature name to the tf.Example-compatible
+      # data type.
+      feature = {
+          'feature0': _int64_feature(feature0),
+          'feature1': _int64_feature(feature1),
+          'feature2': _bytes_feature(feature2),
+          'feature3': _float_feature(feature3),
+      }
+
+      # Create a Features message using tf.train.Example.
+
+      example_proto = tf.train.Example(features=tf.train.Features(
+          feature=feature))
+      return example_proto.SerializeToString()
+
+
+  example_observation = []
+  serialized_example = serialize_example(False, 4, b'goat', 0.9876)
+
+  example_proto = tf.train.Example.FromString(serialized_example)
+
+  print_infos([serialized_example, '', example_proto])
+#+END_SRC
+
+#+RESULTS: d8f047a5-2bc4-49ff-b651-6f29444414a3
+:results:
+b'\nR\n\x11\n\x08feature0\x12\x05\x1a\x03\n\x01\x00\n\x11\n\x08feature1\x12\x05\x1a\x03\n\x01\x04\n\x14\n\x08feature2\x12\x08\n\x06\n\x04goat\n\x14\n\x08feature3\x12\x08\x12\x06\n\x04[\xd3|?'
+
+features {
+  feature {
+    key: "feature0"
+    value {
+      int64_list {
+        value: 0
+      }
+    }
+  }
+  feature {
+    key: "feature1"
+    value {
+      int64_list {
+        value: 4
+      }
+    }
+  }
+  feature {
+    key: "feature2"
+    value {
+      bytes_list {
+        value: "goat"
+      }
+    }
+  }
+  feature {
+    key: "feature3"
+    value {
+      float_list {
+        value: 0.9876000285148621
+      }
+    }
+  }
+}
+
+:end:
+
+* TFRecord ファイルを tf.data から作る
+  
+** データセットからデータを取り出す
+  #+NAME: c123a9e3-2f13-4260-89ae-ffbff8830cf0
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  tf.data.Dataset.from_tensor_slices(feature1)
+  #+END_SRC
+
+  #+RESULTS: c123a9e3-2f13-4260-89ae-ffbff8830cf0
+  :results:
+  <TensorSliceDataset shapes: (), types: tf.int64>
+  :end:
+
+  #+NAME: 39052b23-733b-409b-bff0-f09d28d148f5
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    features_dataset = tf.data.Dataset.from_tensor_slices((feature0, feature1, feature2, feature3))
+    print_infos([
+        'features',
+        features_dataset,
+        ''
+    ])
+
+    for f0, f1, f2, f3 in features_dataset.take(1):
+        print(f0)
+        print(f1)
+        print(f2)
+        print(f3)
+  #+END_SRC
+
+  #+RESULTS: 39052b23-733b-409b-bff0-f09d28d148f5
+  :results:
+  features
+  <TensorSliceDataset shapes: ((), (), (), ()), types: (tf.bool, tf.int64, tf.string, tf.float64)>
+
+  tf.Tensor(False, shape=(), dtype=bool)
+  tf.Tensor(2, shape=(), dtype=int64)
+  tf.Tensor(b'chicken', shape=(), dtype=string)
+  tf.Tensor(-1.1279623295096355, shape=(), dtype=float64)
+  :end:
+  
+** シリアライズするための関数を作る
+*** tf.py_function でラップする場合
+   #+NAME: 6481adfd-0886-415a-b2c5-e478c7db66b1
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     # ref #serialize_example
+     # def serialize_example(feature0, feature1, feature2, feature3):
+     #     feature = {
+     #         'featrue0': _int64_feature(feature0),
+     #         'featrue1': _int64_feature(feature1),
+     #         'featrue2': _bytes_feature(feature2),
+     #         'featrue3': _float_feature(feature3)
+     #     }
+     #     example_proto = tf.train.Example(features=tf.train.Features(
+     #         feature=feature))
+     #     return example_proto.SerializeToString()
+
+
+     def tf_serialize_example(f0, f1, f2, f3):
+         # py_function can't return strings when running on GPU.
+         with tf.device("CPU:0"):
+             tf_string = tf.py_function(
+                 serialize_example,
+                 (f0, f1, f2, f3),  # pass these args to the above function.
+                 tf.string)  # the return type is `tf.string`.
+         return tf.reshape(tf_string, ())  # The result is a scalar
+
+
+     print(tf_serialize_example(f0, f1, f2, f3))
+     print()
+     serialized_features_dastaset = features_dataset.map(tf_serialize_example)
+     serialized_features_dastaset
+   #+END_SRC
+
+   #+RESULTS: 6481adfd-0886-415a-b2c5-e478c7db66b1
+   :results:
+   tf.Tensor(b'\nU\n\x11\n\x08feature0\x12\x05\x1a\x03\n\x01\x00\n\x11\n\x08feature1\x12\x05\x1a\x03\n\x01\x02\n\x17\n\x08feature2\x12\x0b\n\t\n\x07chicken\n\x14\n\x08feature3\x12\x08\x12\x06\n\x04\x12a\x90\xbf', shape=(), dtype=string)
+
+
+   <MapDataset shapes: (), types: tf.string>
+   :end:
+
+***   Generator を用いる場合
+   #+NAME: 4bb3e7d1-b76e-4b66-90d6-faecd6f86aa5
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     def generator():
+         for features in features_dataset:
+             yield serialize_example(*features)
+
+
+     serialized_features_dataset = tf.data.Dataset.from_generator(
+         generator, output_types=tf.string, output_shapes=())
+
+     serialized_features_dataset
+   #+END_SRC
+
+   #+RESULTS: 4bb3e7d1-b76e-4b66-90d6-faecd6f86aa5
+   :results:
+   <DatasetV1Adapter shapes: (), types: tf.string>
+   :end:
+
+   
+   #+NAME: c6a5bbda-d5ee-4bc5-802d-9548e8b3e8b7
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     filename = 'test.tfrecord'
+     writer = tf.data.experimental.TFRecordWriter(filename)
+     writer.write(serialized_features_dataset)
+   #+END_SRC
+
+   #+RESULTS: c6a5bbda-d5ee-4bc5-802d-9548e8b3e8b7
+   :results:
+   :end:
+
+* TFRecord ファイルからデータを取り出す
+  #+NAME: c01af948-fc67-4246-9ca8-2294e315bc9f
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    filenames = [filename]
+    raw_dataset = tf.data.TFRecordDataset(filenames)
+    raw_dataset
+  #+END_SRC
+
+  #+RESULTS: c01af948-fc67-4246-9ca8-2294e315bc9f
+  :results:
+  <TFRecordDatasetV2 shapes: (), types: tf.string>
+  :end:
+
+  保存してあるシリアライズされたデータの取り出し
+  #+NAME: 71ddf8e0-5de1-4f10-9fbf-a028ac57660f
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    for raw_record in raw_dataset.take(3):
+        print(repr(raw_record))
+  #+END_SRC
+
+  #+RESULTS: 71ddf8e0-5de1-4f10-9fbf-a028ac57660f
+  :results:
+  <tf.Tensor: id=361037, shape=(), dtype=string, numpy=b'\nU\n\x11\n\x08feature0\x12\x05\x1a\x03\n\x01\x00\n\x11\n\x08feature1\x12\x05\x1a\x03\n\x01\x02\n\x17\n\x08feature2\x12\x0b\n\t\n\x07chicken\n\x14\n\x08feature3\x12\x08\x12\x06\n\x04\x12a\x90\xbf'>
+  <tf.Tensor: id=361039, shape=(), dtype=string, numpy=b'\nS\n\x15\n\x08feature2\x12\t\n\x07\n\x05horse\n\x14\n\x08feature3\x12\x08\x12\x06\n\x041\xe1\x81=\n\x11\n\x08feature0\x12\x05\x1a\x03\n\x01\x00\n\x11\n\x08feature1\x12\x05\x1a\x03\n\x01\x03'>
+  <tf.Tensor: id=361041, shape=(), dtype=string, numpy=b'\nR\n\x14\n\x08feature2\x12\x08\n\x06\n\x04goat\n\x14\n\x08feature3\x12\x08\x12\x06\n\x04\xce\xae\xdd\xbe\n\x11\n\x08feature0\x12\x05\x1a\x03\n\x01\x00\n\x11\n\x08feature1\x12\x05\x1a\x03\n\x01\x04'>
+  :end:
+
+  デシリアライズします。
+  #+NAME: 5b66c32a-b09b-43d1-83f6-7ec59ad6a205
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    # Create a description of the features.
+    feature_description = {
+        'feature0': tf.io.FixedLenFeature([], tf.int64, default_value=0),
+        'feature1': tf.io.FixedLenFeature([], tf.int64, default_value=0),
+        'feature2': tf.io.FixedLenFeature([], tf.string, default_value=''),
+        'feature3': tf.io.FixedLenFeature([], tf.float32, default_value=0.0),
+    }
+
+
+    def _parse_function(example_proto):
+        # Parse the input `tf.Example` proto using the dictionary above.
+        return tf.io.parse_single_example(example_proto, feature_description)
+
+
+    parsed_dataset = raw_dataset.map(_parse_function)
+    parsed_dataset
+  #+END_SRC
+
+  #+RESULTS: 5b66c32a-b09b-43d1-83f6-7ec59ad6a205
+  :results:
+  <MapDataset shapes: {feature0: (), feature1: (), feature2: (), feature3: ()}, types: {feature0: tf.int64, feature1: tf.int64, feature2: tf.string, feature3: tf.float32}>
+  :end:
+  
+  データのサンプルを観察します。
+  #+NAME: 616a72b5-7dd4-44c8-81e7-e79e7af6454f
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    for parsed_record in parsed_dataset.take(3):
+        print(repr(parsed_record))
+  #+END_SRC
+
+  #+RESULTS: 616a72b5-7dd4-44c8-81e7-e79e7af6454f
+  :results:
+  {'feature0': <tf.Tensor: id=361161, shape=(), dtype=int64, numpy=0>, 'feature1': <tf.Tensor: id=361162, shape=(), dtype=int64, numpy=2>, 'feature2': <tf.Tensor: id=361163, shape=(), dtype=string, numpy=b'chicken'>, 'feature3': <tf.Tensor: id=361164, shape=(), dtype=float32, numpy=-1.1279624>}
+  {'feature0': <tf.Tensor: id=361169, shape=(), dtype=int64, numpy=0>, 'feature1': <tf.Tensor: id=361170, shape=(), dtype=int64, numpy=3>, 'feature2': <tf.Tensor: id=361171, shape=(), dtype=string, numpy=b'horse'>, 'feature3': <tf.Tensor: id=361172, shape=(), dtype=float32, numpy=0.0634178>}
+  {'feature0': <tf.Tensor: id=361177, shape=(), dtype=int64, numpy=0>, 'feature1': <tf.Tensor: id=361178, shape=(), dtype=int64, numpy=4>, 'feature2': <tf.Tensor: id=361179, shape=(), dtype=string, numpy=b'goat'>, 'feature3': <tf.Tensor: id=361180, shape=(), dtype=float32, numpy=-0.43297428>}
+  :end:
+* TFRecord ファイルを通して画像データを読み書きする
+** 画像データのインポート
+   #+NAME: 7c6e9219-7da4-4f80-ae2d-8e8ea6ff8ed7
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer
+     cat_in_snow = tf.keras.utils.get_file(
+         '320px-Felis_catus-cat_on_snow.jpg',
+         'https://storage.googleapis.com/download.tensorflow.org/example_images/320px-Felis_catus-cat_on_snow.jpg'
+     )
+     williamsburg_bridge = tf.keras.utils.get_file(
+         '194px-New_East_River_Bridge_from_Brooklyn_det.4a09796u.jpg',
+         'https://storage.googleapis.com/download.tensorflow.org/example_images/194px-New_East_River_Bridge_from_Brooklyn_det.4a09796u.jpg'
+     )
+
+     display.display(display.Image(filename=cat_in_snow))
+     display.display(
+         display.HTML(
+             'Image cc-by: <a "href=https://commons.wikimedia.org/wiki/File:Felis_catus-cat_on_snow.jpg">Von.grzanka</a>'
+         ))
+     display.display(display.Image(filename=williamsburg_bridge))
+     display.display(
+         display.HTML(
+             '<a "href=https://commons.wikimedia.org/wiki/File:New_East_River_Bridge_from_Brooklyn_det.4a09796u.jpg">From Wikimedia</a>'
+         ))
+  #+END_SRC
+
+  #+RESULTS: 7c6e9219-7da4-4f80-ae2d-8e8ea6ff8ed7
+  :results:
+  [[file:ein-images/ob-ein-e830252dc680a632d558b741d7805ab7.png]]
+  <IPython.core.display.HTML object>
+  [[file:ein-images/ob-ein-7e8474dc1f129d9e01fe6f0155730253.png]]
+  <IPython.core.display.HTML object>
+  :end:
+** TFRecord へ保存する
+*** tf.Example への変換
+   #+NAME: 0648ee58-cdf9-47b5-854d-cd5acf7c3de2
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     image_labels = {
+         cat_in_snow : 0,
+         williamsburg_bridge : 1,
+     }
+
+     # this is an example, just using the cat image.
+     img_string = open(cat_in_snow , 'rb').read()
+     label = image_labels[cat_in_snow]
+
+     # create a dictionary with features that may be relevent..
+     def image_example(image_string, label):
+         image_shape = tf.image.decode_jpeg(image_string).shape
+         feature = {
+             'height': _int64_feature(image_shape[0]),
+             'width' : _int64_feature(image_shape[1]),
+             'depth': _int64_feature(image_shape[2]),
+             'label': _int64_feature(label),
+             'image_raw' : _bytes_feature(image_string),
+         }
+         return tf.train.Example(features=tf.train.Features(feature=feature))
+
+     for line in str(image_example(img_string, label)).split('\n')[:15]:
+         print(line)
+     print('...')
+   #+END_SRC
+
+   #+RESULTS: 0648ee58-cdf9-47b5-854d-cd5acf7c3de2
+   :results:
+   features {
+     feature {
+       key: "depth"
+       value {
+         int64_list {
+           value: 3
+         }
+       }
+     }
+     feature {
+       key: "height"
+       value {
+         int64_list {
+           value: 213
+         }
+   ...
+   :end:
+
+*** TFRecord の保存
+   #+NAME: bd0b80a8-b901-41f2-b8d8-cfa6c6a75fb0
+   #+BEGIN_SRC ein-python :session localhost :results none
+     record_file = 'images.tfrecords'
+     with tf.io.TFRecordWriter(record_file) as writer:
+         for filename, label in image_labels.items():
+             image_string = open(filename, 'rb').read()
+             tf_example = image_example(image_string, label)
+             writer.write(tf_example.SerializeToString())
+   #+END_SRC
+
+   #+RESULTS: bd0b80a8-b901-41f2-b8d8-cfa6c6a75fb0
+
+   データサイズの確認
+   #+begin_src shell :exports both
+   du -sh images.tfrecords
+   #+end_src
+
+   #+RESULTS:
+   | 36K | images.tfrecords |
+
+*** TFRecord の読み出しとデシリアライズ
+   
+   #+NAME: 3cc7ac75-91a3-4462-ad04-99f06ad3b812
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     raw_image_dataset = tf.data.TFRecordDataset('images.tfrecords')
+
+     # Create a dictionary describing the features
+     image_feature_escription = {
+         'height': tf.io.FixedLenFeature([], tf.int64),
+         'width': tf.io.FixedLenFeature([], tf.int64),
+         'depth': tf.io.FixedLenFeature([], tf.int64),
+         'label': tf.io.FixedLenFeature([], tf.int64),
+         'image_raw': tf.io.FixedLenFeature([], tf.string),
+     }
+
+
+     def _parse_image_function(example_proto):
+         # parse the input tf.Example proto using the dictionary above.
+         return tf.io.parse_single_example(example_proto, image_feature_escription)
+
+
+     parsed_image_dataset = raw_image_dataset.map(_parse_image_function)
+     parsed_image_dataset
+   #+END_SRC
+
+   #+RESULTS: 3cc7ac75-91a3-4462-ad04-99f06ad3b812
+   :results:
+   <MapDataset shapes: {depth: (), height: (), image_raw: (), label: (), width: ()}, types: {depth: tf.int64, height: tf.int64, image_raw: tf.string, label: tf.int64, width: tf.int64}>
+   :end:
+
+*** 画像の視覚化
+
+   #+NAME: 6781f7ac-2b29-43ed-8b6a-8637d1a33c7d
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     for image_features in parsed_image_dataset:
+         image_raw = image_features['image_raw'].numpy()
+         display.display(display.Image(data=image_raw))
+   #+END_SRC
+
+   #+RESULTS: 6781f7ac-2b29-43ed-8b6a-8637d1a33c7d
+   :results:
+   [[file:ein-images/ob-ein-e830252dc680a632d558b741d7805ab7.png]]
+   [[file:ein-images/ob-ein-7e8474dc1f129d9e01fe6f0155730253.png]]
+   :end:
