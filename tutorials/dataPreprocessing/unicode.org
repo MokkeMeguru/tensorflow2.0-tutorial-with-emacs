@@ -1,0 +1,236 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: Unicode の取扱い
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+
+      from tensorflow import keras
+      from tensorflow.keras import layers
+
+      import numpy as np
+      # import matplotlib.pyplot as plt
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      import pathlib
+      import random
+      # import IPython.display as display
+      
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-beta1
+  :end:
+
+* tf.string 
+  #+NAME: ddb7f04d-7020-4a0c-8d7c-b96eaf4c24d3
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    tf.constant(u"Thanks 😊")
+  #+END_SRC
+
+  #+RESULTS: ddb7f04d-7020-4a0c-8d7c-b96eaf4c24d3
+  :results:
+  <tf.Tensor: id=0, shape=(), dtype=string, numpy=b'Thanks \xf0\x9f\x98\x8a'>
+  :end:
+
+  #+NAME: d045a24e-cdef-4cde-b551-f6dd49c2594b
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  tf.constant([u"You're", u"welcome!"]).shape
+  #+END_SRC
+
+  #+RESULTS: d045a24e-cdef-4cde-b551-f6dd49c2594b
+  :results:
+  TensorShape([2])
+  :end:
+
+** エンコード
+#+NAME: b1fe8f1f-f0b2-41d6-8986-ed5200d1bd06
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+text_utf8 = tf.constant(u'自然言語処理')
+text_utf8
+#+END_SRC
+
+#+RESULTS: b1fe8f1f-f0b2-41d6-8986-ed5200d1bd06
+:results:
+<tf.Tensor: id=3, shape=(), dtype=string, numpy=b'\xe8\x87\xaa\xe7\x84\xb6\xe8\xa8\x80\xe8\xaa\x9e\xe5\x87\xa6\xe7\x90\x86'>
+:end:
+
+** Batch dimensions
+#+NAME: 9e21f8f6-acc1-4e34-b453-96a9bf191000
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  batch_utf8 = [s.encode('UTF-8') for s in [u'自然言語処理', u'Hoge Bar', u"Thanks 😊"]]
+
+  # char -> unicode の id
+  batch_chars_ragged = tf.strings.unicode_decode(batch_utf8,
+                                                 input_encoding='UTF-8')
+
+  for sentence_chars in batch_chars_ragged.to_list():
+      print(sentence_chars)
+#+END_SRC
+
+#+RESULTS: 9e21f8f6-acc1-4e34-b453-96a9bf191000
+:results:
+[33258, 28982, 35328, 35486, 20966, 29702]
+[72, 111, 103, 101, 32, 66, 97, 114]
+[84, 104, 97, 110, 107, 115, 32, 128522]
+:end:
+
+#+NAME: 98f940d7-8bc8-409e-ae4c-bf0582e515f8
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  batch_chars_padded = batch_chars_ragged.to_tensor(default_value=0)
+  print(batch_chars_padded.numpy())
+#+END_SRC
+
+#+RESULTS: 98f940d7-8bc8-409e-ae4c-bf0582e515f8
+:results:
+[[ 33258  28982  35328  35486  20966  29702      0      0]
+ [    72    111    103    101     32     66     97    114]
+ [    84    104     97    110    107    115     32 128522]]
+:end:
+
+#+NAME: b48a16f4-4f02-4afd-8859-d85d18c6d294
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  batch_chars_sparse = batch_chars_ragged.to_sparse()
+  print_infos([
+      'translate->', [[99, 97, 116], [100, 111, 103], [99, 111, 119]],
+      tf.strings.unicode_encode([[99, 97, 116], [100, 111, 103], [99, 111, 119]],
+                                output_encoding='UTF-8'), '', 'translate->',
+      batch_chars_ragged,
+      tf.strings.unicode_encode(batch_chars_ragged, output_encoding='UTF-8'),
+      '',
+      'translate->',
+      batch_chars_sparse.__class__,
+      tf.strings.unicode_encode(
+          tf.RaggedTensor.from_sparse(batch_chars_sparse),
+          output_encoding='UTF-8'
+      ),
+      '',
+      'translate->',
+      batch_chars_padded.__class__,
+      tf.strings.unicode_encode(
+          tf.RaggedTensor.from_tensor(batch_chars_padded, padding=0),
+          output_encoding='UTF-8'
+      )
+  ])
+#+END_SRC
+
+#+RESULTS: b48a16f4-4f02-4afd-8859-d85d18c6d294
+:results:
+translate->
+[[99, 97, 116], [100, 111, 103], [99, 111, 119]]
+tf.Tensor([b'cat' b'dog' b'cow'], shape=(3,), dtype=string)
+
+translate->
+<tf.RaggedTensor [[33258, 28982, 35328, 35486, 20966, 29702], [72, 111, 103, 101, 32, 66, 97, 114], [84, 104, 97, 110, 107, 115, 32, 128522]]>
+tf.Tensor(
+[b'\xe8\x87\xaa\xe7\x84\xb6\xe8\xa8\x80\xe8\xaa\x9e\xe5\x87\xa6\xe7\x90\x86'
+ b'Hoge Bar' b'Thanks \xf0\x9f\x98\x8a'], shape=(3,), dtype=string)
+
+translate->
+<class 'tensorflow.python.framework.sparse_tensor.SparseTensor'>
+tf.Tensor(
+[b'\xe8\x87\xaa\xe7\x84\xb6\xe8\xa8\x80\xe8\xaa\x9e\xe5\x87\xa6\xe7\x90\x86'
+ b'Hoge Bar' b'Thanks \xf0\x9f\x98\x8a'], shape=(3,), dtype=string)
+
+translate->
+<class 'tensorflow.python.framework.ops.EagerTensor'>
+tf.Tensor(
+[b'\xe8\x87\xaa\xe7\x84\xb6\xe8\xa8\x80\xe8\xaa\x9e\xe5\x87\xa6\xe7\x90\x86'
+ b'Hoge Bar' b'Thanks \xf0\x9f\x98\x8a'], shape=(3,), dtype=string)
+:end:
+
+* Unicode Operation
+#+NAME: 88c16ac1-9f8a-45bd-8ef4-bd9d9a29c890
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  thanks = u"Thanks 😊".encode('UTF-8')
+  num_bytes = tf.strings.length(thanks).numpy()
+  num_chars = tf.strings.length(thanks, unit='UTF8_CHAR').numpy()
+  print_infos([
+      "Thanks 😊",
+      '{}'.format(tf.strings.unicode_split(thanks, 'UTF-8').numpy()),
+      '{} bytes'.format(num_bytes),
+      '{} UTF-8 charactors'.format(num_chars),
+  ])
+#+END_SRC
+
+#+RESULTS: 88c16ac1-9f8a-45bd-8ef4-bd9d9a29c890
+:results:
+Thanks 😊
+[b'T' b'h' b'a' b'n' b'k' b's' b' ' b'\xf0\x9f\x98\x8a']
+11 bytes
+8 UTF-8 charactors
+:end:
+
+顔文字などをデコードする際に必要となる、byte offset を一緒に出力する方法は次のようになります。
+#+NAME: ac7541e9-a1e1-488f-bc14-294c514db9ef
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  codepoints, offsets = tf.strings.unicode_decode_with_offsets(u"🎈🎉🎊", 'UTF-8')
+
+  for (codepoint, offset) in zip(codepoints.numpy(), offsets.numpy()):
+      print("At byte offset {}: codepoint {}".format(offset, codepoint))
+#+END_SRC
+
+#+RESULTS: ac7541e9-a1e1-488f-bc14-294c514db9ef
+:results:
+At byte offset 0: codepoint 127880
+At byte offset 4: codepoint 127881
+At byte offset 8: codepoint 127882
+:end:
