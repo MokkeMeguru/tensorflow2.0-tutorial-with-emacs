@@ -143,7 +143,6 @@
    '/home/meguru/.keras/datasets/flower_photos/roses/1402130395_0b89d76029.jpg',
    '/home/meguru/.keras/datasets/flower_photos/sunflowers/5738580862_e128192f75.jpg']
   :end:
-
   
 * データの視覚化
   #+NAME: 52e3f4a2-e074-451a-82e0-ca73bd7c1b4a
@@ -178,7 +177,6 @@
 
   :end:
 
-  
 * 画像データのラベル付け
   #+NAME: 855941f1-306e-41f6-a6d4-7e277bf17f57
   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
@@ -398,7 +396,6 @@
   example map dataset
   <MapDataset shapes: ((192, 192, 3), ()), types: (tf.float32, tf.int32)>
   :end:
-  
   
 * 訓練時の用い方
   #+NAME: 0024d2a3-955d-4eb6-8c7c-c19781010c57
@@ -784,7 +781,6 @@
   __________________________________________________________________________________________________
   :end:
 
-  
 * モデルの作成
   #+NAME: cf326e36-8ef9-48c6-80c1-b71227b27a96
   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both

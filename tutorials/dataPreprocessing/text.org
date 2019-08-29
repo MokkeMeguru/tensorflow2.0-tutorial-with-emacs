@@ -1,0 +1,323 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: テキスト の読み込み
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+
+      from tensorflow import keras
+      from tensorflow.keras import layers
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      import pathlib
+      import random
+      # import IPython.display as display
+      
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-beta1
+  :end:
+
+* データのインポート
+  データセット
+  + 特定のテキストを翻訳したもの
+  + cowper, derby, butler がそれぞれ翻訳
+  + 文章を入力として、誰の文であるかをクラス分類することができる
+
+  #+NAME: 97176a10-4bf6-4b8c-80d8-3b678c56d3a6
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    DIRECTORY_URL = 'https://storage.googleapis.com/download.tensorflow.org/data/illiad/'
+    FILE_NAMES = ['cowper.txt', 'derby.txt', 'butler.txt']
+
+    for name in FILE_NAMES:
+        text_dir = keras.utils.get_file(name, origin=DIRECTORY_URL + name)
+
+    parent_dir = os.path.dirname(text_dir)
+    parent_dir
+  #+END_SRC
+
+  #+RESULTS: 97176a10-4bf6-4b8c-80d8-3b678c56d3a6
+  :results:
+  '/home/meguru/.keras/datasets'
+  :end:
+
+* データセットを作る
+  #+NAME: d0a830da-4209-4915-b666-5ef095b5da15
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    def labeler(example, index):
+        return example, tf.cast(index, tf.int64)
+
+
+    labeled_data_sets = []
+
+    for i, fname in enumerate(FILE_NAMES):
+        lines_dataset = tf.data.TextLineDataset(os.path.join(parent_dir, fname))
+        labeled_dataset = lines_dataset.map(lambda ex: labeler(ex, i))
+        labeled_data_sets.append(labeled_dataset)
+
+    # labeled_data_sets : list<tensorflow.python.data.ops.dataset_ops.MapDataset>
+    # -> need concat these datasets
+  #+END_SRC
+
+  #+RESULTS: d0a830da-4209-4915-b666-5ef095b5da15
+  :results:
+  :end:
+
+  #+NAME: f5298afb-dca9-4638-ae0e-aeacbaaf3b32
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    BUFFER_SIZE = 50000
+    BATCH_SIZE = 64
+    TAKE_SIZE = 5000
+
+    all_labeled_data = labeled_data_sets[0]
+    for labeled_dataset in labeled_data_sets[1:]:
+        all_labeled_data = all_labeled_data.concatenate(labeled_dataset)
+
+    all_labeled_data = all_labeled_data.shuffle(BUFFER_SIZE,
+                                                reshuffle_each_iteration=False)
+
+    for ex in all_labeled_data.take(5):
+        print(ex)
+  #+END_SRC
+
+  #+RESULTS: f5298afb-dca9-4638-ae0e-aeacbaaf3b32
+  :results:
+  (<tf.Tensor: id=973001, shape=(), dtype=string, numpy=b'Then, wounded as they were, themselves the Kings,'>, <tf.Tensor: id=973002, shape=(), dtype=int64, numpy=0>)
+  (<tf.Tensor: id=973005, shape=(), dtype=string, numpy=b'Arriving where the mightiest and the most'>, <tf.Tensor: id=973006, shape=(), dtype=int64, numpy=0>)
+  (<tf.Tensor: id=973009, shape=(), dtype=string, numpy=b"For thee, press'd also by encroaching age,">, <tf.Tensor: id=973010, shape=(), dtype=int64, numpy=0>)
+  (<tf.Tensor: id=973013, shape=(), dtype=string, numpy=b'Soon as the Olympian heights, seat of the Gods,'>, <tf.Tensor: id=973014, shape=(), dtype=int64, numpy=0>)
+  (<tf.Tensor: id=973017, shape=(), dtype=string, numpy=b'Is it because Atrides hath prevailed'>, <tf.Tensor: id=973018, shape=(), dtype=int64, numpy=0>)
+  :end:
+
+* 文字のエンコード
+  #+NAME: 9314df3f-ed5f-4702-8b65-06c2cbadbd8e
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    tokenizer = tfds.features.text.Tokenizer()
+    vocabulary_set = set()
+    for text_tensor, _ in all_labeled_data:
+        some_tokens = tokenizer.tokenize(text_tensor.numpy())
+        vocabulary_set.update(some_tokens)
+
+    vocab_size = len(vocabulary_set)
+    vocab_size
+  #+END_SRC
+
+  #+RESULTS: 9314df3f-ed5f-4702-8b65-06c2cbadbd8e
+  :results:
+  17178
+  :end:
+  
+  エンコードの例
+  #+NAME: c23474b2-e5d1-4493-b98a-19b4b3eb4f19
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports  both
+    encoder = tfds.features.text.TokenTextEncoder(vocabulary_set)
+    example_text=  next(iter(all_labeled_data))[0].numpy()
+    print_infos([
+        'example text',
+        example_text,'',
+        'example tokenized text',
+        encoder.encode(example_text)
+    ])
+  #+END_SRC
+
+  #+RESULTS: c23474b2-e5d1-4493-b98a-19b4b3eb4f19
+  :results:
+  example text
+  b'Then, wounded as they were, themselves the Kings,'
+
+  example tokenized text
+  [2397, 2705, 12385, 11932, 14619, 5371, 10005, 1230]
+  :end:
+
+
+  上動作を関数化します。dataset へ map する関数は次のようにして、tf.py_function でラップする必要があります。
+  #+NAME: 771098e4-f08a-47b1-9674-3bf1a6cd237a
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    def encode(text_tensor, label):
+        encoded_text = encoder.encode(text_tensor.numpy())
+        return encoded_text, label
+
+
+    def encode_map_fn(text, label):
+        return tf.py_function(encode,
+                              inp=[text, label],
+                              Tout=(tf.int64, tf.int64))
+
+
+    all_encoded_data = all_labeled_data.map(encode_map_fn)
+  #+END_SRC
+
+  #+RESULTS: 771098e4-f08a-47b1-9674-3bf1a6cd237a
+  :results:
+  :end:
+
+* データセットの分割
+  テキストの単語数を揃えるために、 ~padded_batch~ (batch ではなく) を用いる必要があります。
+  #+NAME: 47e17f1d-dc04-4550-8d41-27bc8265af31
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    # TAKE_SIZE = 5000
+    train_data = all_encoded_data.skip(TAKE_SIZE).shuffle(BUFFER_SIZE)
+    train_data = train_data.padded_batch(BATCH_SIZE, padded_shapes=([-1], []))
+
+    test_data = all_encoded_data.take(TAKE_SIZE)
+    test_data = test_data.padded_batch(BATCH_SIZE, padded_shapes=([-1], []))
+  #+END_SRC
+
+  #+RESULTS: 47e17f1d-dc04-4550-8d41-27bc8265af31
+  :results:
+  :end:
+
+
+  #+NAME: bd1a2ce1-398f-4ba1-87a1-21eec0084668
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    sample_text, sample_labels = next(iter(test_data))
+
+    sample_text[0], sample_labels[0]
+  #+END_SRC
+
+  #+RESULTS: bd1a2ce1-398f-4ba1-87a1-21eec0084668
+  :results:
+  (<tf.Tensor: id=1122425, shape=(16,), dtype=int64, numpy=
+   array([ 2397,  2705, 12385, 11932, 14619,  5371, 10005,  1230,     0,
+              0,     0,     0,     0,     0,     0,     0])>,
+   <tf.Tensor: id=1122429, shape=(), dtype=int64, numpy=0>)
+  :end:
+
+  WARN: zero padding を行っているため、語彙数を1増やす必要があります。(Tensorflow では 0 を padding の予約 id として強制的に振っている)
+  #+NAME: 48e968ba-fb63-4648-8910-3746174eb69e
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    vocab_size += 1
+  #+END_SRC
+
+  #+RESULTS: 48e968ba-fb63-4648-8910-3746174eb69e
+  :results:
+  :end:
+
+* モデルの作成
+  #+NAME: 977cf04c-47cd-4a6a-b12d-0de3ec65344e
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    layers = [
+        keras.layers.Embedding(vocab_size, 64),
+        keras.layers.Bidirectional(keras.layers.LSTM(64)),
+        ,*[keras.layers.Dense(units, activation='relu') for units in [64, 64]],
+        keras.layers.Dense(3, activation='softmax')
+    ]
+
+    model = keras.Sequential(layers)
+    model.compile(optimizer='adam',
+                  loss='sparse_categorical_crossentropy',
+                  metrics=['accuracy'])
+
+    model.summary()
+  #+END_SRC
+
+  #+RESULTS: 977cf04c-47cd-4a6a-b12d-0de3ec65344e
+  :results:
+  Model: "sequential_32"
+  _________________________________________________________________
+  Layer (type)                 Output Shape              Param #   
+  =================================================================
+  embedding_5 (Embedding)      (None, None, 64)          1099456   
+  _________________________________________________________________
+  bidirectional_5 (Bidirection (None, 128)               66048     
+  _________________________________________________________________
+  dense_104 (Dense)            (None, 64)                8256      
+  _________________________________________________________________
+  dense_105 (Dense)            (None, 64)                4160      
+  _________________________________________________________________
+  dense_106 (Dense)            (None, 3)                 195       
+  =================================================================
+  Total params: 1,178,115
+  Trainable params: 1,178,115
+  Non-trainable params: 0
+  _________________________________________________________________
+  :end:
+
+* モデルの訓練
+  #+NAME: c5264cc0-8a4f-4b8c-bafe-1389f9c31f51
+  #+BEGIN_SRC ein-python :session localhost :results none
+    model.fit(train_data, epochs=3, validation_data=test_data)
+  #+END_SRC
+
+  #+RESULTS: c5264cc0-8a4f-4b8c-bafe-1389f9c31f51
+  Epoch 3/3
+  697/697 [==============================] - 25s 35ms/step - loss: 0.2132 - accuracy: 0.9082 - val_loss: 0.4295 - val_accuracy: 0.8314
+
+  #+NAME: ec845020-ee69-44f6-b912-97d6f05f3f1b
+  #+BEGIN_SRC ein-python :session localhost :results none
+    eval_loss, eval_acc = model.evaluate(test_data)
+
+    print_infos([
+        '{:20}:{:.3f}'.format('Eval Loss', eval_loss),
+        '{:20}:{:.3f}'.format('Eval Acc', eval_acc)
+    ])
+  #+END_SRC
+
+  #+RESULTS: ec845020-ee69-44f6-b912-97d6f05f3f1b
+
+  Eval Loss           :0.429
+  Eval Acc            :0.831
+
+
