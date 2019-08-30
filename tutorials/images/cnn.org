@@ -1,0 +1,236 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: Convolutional neural network
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      # import tensorflow_datasets as tfds
+      
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      # import tensorflow_text as text
+
+      import numpy as np
+      # import matplotlib.pyplot as plt
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      import pathlib
+      import random
+      # import IPython.display as display
+      
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+
+* データセットのインポート
+  #+NAME: 312d514d-b63d-4a3b-85df-2560f4bf7f92
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    (train_images, train_labels), (test_images,
+                                   test_labels) = datasets.mnist.load_data()
+
+    train_images = train_images.reshape((60000, 28, 28, 1))
+    test_images = test_images.reshape((10000, 28, 28, 1))
+
+    # Normalize pixel values to be between 0 and 1
+    train_images, test_images = train_images / 255.0, test_images / 255.0
+
+    print_infos(
+        ['train size',
+         len(train_images), '', 'test size',
+         len(test_images)])
+  #+END_SRC
+
+  #+RESULTS: 312d514d-b63d-4a3b-85df-2560f4bf7f92
+  :results:
+  train size
+  60000
+
+  test size
+  10000
+  :end:
+
+* モデルの作成
+  #+NAME: 282ab9c2-e834-4153-92cc-fa70d1fff6b3
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    # layer = [
+    #     layers.Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1)),
+    #     layers.MaxPooling2D((2, 2)),
+    #     layers.Conv2D(64, (3, 3), activation='relu'),
+    #     layers.MaxPooling2D((2, 2)),
+    #     layers.Conv2D(64, (3, 3), activation='relu')
+    # ]
+
+    # model = models.Sequential(layer)
+
+    model = models.Sequential()
+    model.add(layers.Conv2D(32, (3, 3), activation='relu',
+                            input_shape=(28, 28, 1)))
+    model.add(layers.MaxPooling2D((2, 2)))
+    model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+    model.add(layers.MaxPooling2D((2, 2)))
+    model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+
+    model.summary()
+  #+END_SRC
+
+  #+RESULTS: 282ab9c2-e834-4153-92cc-fa70d1fff6b3
+  :results:
+  Model: "sequential_5"
+  _________________________________________________________________
+  Layer (type)                 Output Shape              Param #   
+  =================================================================
+  conv2d_17 (Conv2D)           (None, 26, 26, 32)        320       
+  _________________________________________________________________
+  max_pooling2d_10 (MaxPooling (None, 13, 13, 32)        0         
+  _________________________________________________________________
+  conv2d_18 (Conv2D)           (None, 11, 11, 64)        18496     
+  _________________________________________________________________
+  max_pooling2d_11 (MaxPooling (None, 5, 5, 64)          0         
+  _________________________________________________________________
+  conv2d_19 (Conv2D)           (None, 3, 3, 64)          36928     
+  =================================================================
+  Total params: 55,744
+  Trainable params: 55,744
+  Non-trainable params: 0
+  _________________________________________________________________
+  :end:
+
+* Dense Layer を追加する
+  add 関数により *元のモデルを崩さないまま* レイヤーを追加することができます。
+
+#+NAME: 109562b6-d48a-4e71-b310-6332820a3fd8
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  model.add(layers.Flatten())
+  model.add(layers.Dense(64, activation='relu'))
+  model.add(layers.Dense(10, activation='softmax'))
+
+  model.summary()
+#+END_SRC
+
+#+RESULTS: 109562b6-d48a-4e71-b310-6332820a3fd8
+:results:
+Model: "sequential_5"
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+conv2d_17 (Conv2D)           (None, 26, 26, 32)        320       
+_________________________________________________________________
+max_pooling2d_10 (MaxPooling (None, 13, 13, 32)        0         
+_________________________________________________________________
+conv2d_18 (Conv2D)           (None, 11, 11, 64)        18496     
+_________________________________________________________________
+max_pooling2d_11 (MaxPooling (None, 5, 5, 64)          0         
+_________________________________________________________________
+conv2d_19 (Conv2D)           (None, 3, 3, 64)          36928     
+_________________________________________________________________
+flatten_4 (Flatten)          (None, 576)               0         
+_________________________________________________________________
+dense_8 (Dense)              (None, 64)                36928     
+_________________________________________________________________
+dense_9 (Dense)              (None, 10)                650       
+=================================================================
+Total params: 93,322
+Trainable params: 93,322
+Non-trainable params: 0
+_________________________________________________________________
+:end:
+
+* モデルを訓練する
+  #+NAME: 0698d9a2-aee0-49a4-aa2f-fa2c1c5e796b
+  #+BEGIN_SRC ein-python :session localhost :results none
+    model.compile(optimizer='adam',
+                  loss='sparse_categorical_crossentropy',
+                  metrics=['accuracy'])
+
+    model.fit(train_images, train_labels, epochs=5)
+  #+END_SRC
+
+  #+RESULTS: 0698d9a2-aee0-49a4-aa2f-fa2c1c5e796b
+  Epoch 5/5
+  60000/60000 [==============================] - 18s 302us/sample - loss: 0.0200 - accuracy: 0.9933
+
+* モデルを評価する
+  #+NAME: fff8aacd-0587-40cf-82e7-4966c238ecd7
+  #+BEGIN_SRC ein-python :session localhost :results none
+  test_acc, test_loss = model.evaluate(test_images, test_labels)
+  #+END_SRC
+
+  #+RESULTS: fff8aacd-0587-40cf-82e7-4966c238ecd7
+
+  #+NAME: 0c44fabd-b548-4130-9240-d1af32945702
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    print_infos([
+        'test acc',
+        test_acc,
+        'test loss',
+        test_loss
+    ])
+  #+END_SRC
+
+  #+RESULTS: 0c44fabd-b548-4130-9240-d1af32945702
+  :results:
+  test acc
+  0.033042007934255525
+  test loss
+  0.9905
+  :end:
+

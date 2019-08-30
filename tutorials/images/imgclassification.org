@@ -1,0 +1,546 @@
+# -*- org-expo
+rt-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: Convolutional neural network
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      # import tensorflow_datasets as tfds
+      
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      from tensorflow.keras.models import Sequential
+      from tensorflow.keras.layers import Dense, Conv2D, Flatten, Dropout, MaxPooling2D
+      from tensorflow.keras.preprocessing.image import ImageDataGenerator
+      # import tensorflow_text as text
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      import pathlib
+      import random
+      # import IPython.display as display
+      
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+
+* データのインポート
+#+NAME: 0de6d410-0436-47a0-81be-1b8fcbb26504
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  _URL = 'https://storage.googleapis.com/mledu-datasets/cats_and_dogs_filtered.zip'
+  path_to_zip = tf.keras.utils.get_file('cats_and_dogs.zip',
+                                        origin=_URL,
+                                        extract=True)
+  PATH = os.path.join(os.path.dirname(path_to_zip), 'cats_and_dogs_filtered')
+#+END_SRC
+
+#+RESULTS: 0de6d410-0436-47a0-81be-1b8fcbb26504
+:results:
+:end:
+
+#+begin_src shell :exports both
+tree /home/meguru/.keras/datasets/cats_and_dogs_filtered -d
+#+end_src
+
+#+RESULTS:
+| /home/meguru/.keras/datasets/cats_and_dogs_filtered |             |      |
+| ├──                                              | train       |      |
+| │                                                  | ├──      | cats |
+| │                                                  | └──      | dogs |
+| └──                                              | validation  |      |
+| ├──                                              | cats        |      |
+| └──                                              | dogs        |      |
+| 6                                                   | directories |      |
+
+#+NAME: 45374e35-83f1-4bdb-9ca6-85e842a0b4cc
+#+BEGIN_SRC ein-python :session localhost :results raw drawer
+  train_dir = os.path.join(PATH, 'train')
+  validation_dir = os.path.join(PATH, 'validation')
+
+  train_cats_dir = os.path.join(train_dir, 'cats')
+  train_dogs_dir = os.path.join(train_dir, 'dogs')
+  validation_cats_dir = os.path.join(validation_dir, 'cats')
+  validation_dogs_dir = os.path.join(validation_dir, 'dogs')
+#+END_SRC
+
+#+RESULTS: 45374e35-83f1-4bdb-9ca6-85e842a0b4cc
+:results:
+:end:
+
+#+NAME: f9b64a56-50d6-4042-99dc-d6250329704e
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  num_cats_tr = len(os.listdir(train_cats_dir))
+  num_dogs_tr = len(os.listdir(train_dogs_dir))
+
+  num_cats_val = len(os.listdir(validation_cats_dir))
+  num_dogs_val = len(os.listdir(validation_dogs_dir))
+
+  total_train = num_cats_tr + num_dogs_tr
+  total_val = num_cats_val + num_dogs_val
+
+  print_infos([
+      'total training cat images: {}'.format(num_cats_tr),
+      'total training dog images: {}'.format(num_dogs_tr),
+      'total validation cat images: {}'.format(num_cats_val),
+      'total validation dog images: {}'.format(num_dogs_val),
+      '--',
+      'Total training images: {}' .format(total_train),
+      'Total validation images: {}' .format(total_val)
+  ])
+#+END_SRC
+
+#+RESULTS: f9b64a56-50d6-4042-99dc-d6250329704e
+:results:
+total training cat images: 1000
+total training dog images: 1000
+total validation cat images: 500
+total validation dog images: 500
+--
+Total training images: 2000
+Total validation images: 1000
+:end:
+
+* データの前処理
+#+NAME: d5128686-a957-4824-868a-0d448efe30cb
+#+BEGIN_SRC ein-python :session localhost :results raw drawer
+  batch_size = 128
+  epochs = 15
+  IMG_HEIGHT = 150
+  IMG_WIDTH = 150
+#+END_SRC
+
+#+RESULTS: d5128686-a957-4824-868a-0d448efe30cb
+:results:
+:end:
+
+#+NAME: 1086fffe-1ad8-47bc-814a-f45a7e4705ff
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  # FIle path -> Generator -> datasets
+
+  # Generator
+  train_image_generator = ImageDataGenerator(rescale=1. / 255)
+  validation_image_generator = ImageDataGenerator(rescale=1. / 255)
+
+  # Datasets
+  train_data_gen = train_image_generator.flow_from_directory(
+      batch_size=batch_size,
+      directory=train_dir,
+      shuffle=True,
+      target_size=(IMG_HEIGHT, IMG_WIDTH),
+      class_mode='binary')
+
+  val_data_gen = validation_image_generator.flow_from_directory(
+      batch_size=batch_size,
+      directory=validation_dir,
+      target_size=(IMG_HEIGHT, IMG_WIDTH),
+      class_mode='binary')
+#+END_SRC
+
+#+RESULTS: 1086fffe-1ad8-47bc-814a-f45a7e4705ff
+:results:
+Found 2000 images belonging to 2 classes.
+Found 1000 images belonging to 2 classes.
+:end:
+
+** データの視覚化
+#+NAME: be443695-e5f9-49e0-a697-34ae75db91b5
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  sample_training_images, sample_training_labels = next(train_data_gen)
+
+
+  def plotImages(images_arr):
+      fig, axes = plt.subplots(1, 5, figsize=(20, 20))
+      axes = axes.flatten()
+      for img, ax in zip(images_arr, axes):
+          ax.imshow(img)
+          ax.axis('off')
+      plt.tight_layout()
+      plt.show()
+
+
+  plotImages(sample_training_images[:5])
+#+END_SRC
+
+#+RESULTS: be443695-e5f9-49e0-a697-34ae75db91b5
+:results:
+[[file:ein-images/ob-ein-02f71c5419e98373d531d8a9fdbbc06d.png]]
+:end:
+
+* モデルの作成
+#+NAME: aece40e6-6e15-4a64-9cbf-8339b510091f
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  model = Sequential([
+      Conv2D(16,
+             3,
+             padding='same',
+             activation='relu',
+             input_shape=(IMG_HEIGHT, IMG_WIDTH, 3)),
+      MaxPooling2D(),
+      Conv2D(32, 3, padding='same', activation='relu'),
+      MaxPooling2D(),
+      Conv2D(64, 3, padding='same', activation='relu'),
+      MaxPooling2D(),
+      Flatten(),
+      Dense(512, activation='relu'),
+      Dense(1, activation='sigmoid')
+  ])
+
+  model.compile(optimizer='adam',
+                loss='binary_crossentropy',
+                metrics=['accuracy'])
+
+  model.summary()
+#+END_SRC
+
+#+RESULTS: aece40e6-6e15-4a64-9cbf-8339b510091f
+:results:
+Model: "sequential"
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+conv2d (Conv2D)              (None, 150, 150, 16)      448       
+_________________________________________________________________
+max_pooling2d (MaxPooling2D) (None, 75, 75, 16)        0         
+_________________________________________________________________
+conv2d_1 (Conv2D)            (None, 75, 75, 32)        4640      
+_________________________________________________________________
+max_pooling2d_1 (MaxPooling2 (None, 37, 37, 32)        0         
+_________________________________________________________________
+conv2d_2 (Conv2D)            (None, 37, 37, 64)        18496     
+_________________________________________________________________
+max_pooling2d_2 (MaxPooling2 (None, 18, 18, 64)        0         
+_________________________________________________________________
+flatten (Flatten)            (None, 20736)             0         
+_________________________________________________________________
+dense (Dense)                (None, 512)               10617344  
+_________________________________________________________________
+dense_1 (Dense)              (None, 1)                 513       
+=================================================================
+Total params: 10,641,441
+Trainable params: 10,641,441
+Non-trainable params: 0
+_________________________________________________________________
+:end:
+
+
+* モデルの訓練
+#+NAME: 18ba38f7-8f75-4704-9091-bbf366e5c5d7
+#+BEGIN_SRC ein-python :session localhost :results none
+  history = model.fit_generator(train_data_gen,
+                                steps_per_epoch=total_train // batch_size,
+                                epochs=epochs,
+                                validation_data=val_data_gen,
+                                validation_steps=total_val // batch_size)
+#+END_SRC
+
+#+RESULTS: 18ba38f7-8f75-4704-9091-bbf366e5c5d7
+Epoch 15/15
+15/15 [==============================] - 21s 1s/step - loss: 0.2291 - accuracy: 0.9103 - val_loss: 0.5911 - val_accuracy: 0.7333
+
+** 結果の視覚化
+#+NAME: 9beea513-dee3-4df3-ac8a-b1e464c68ec0
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  acc = history.history['accuracy']
+  val_acc = history.history['val_accuracy']
+
+  loss = history.history['loss']
+  val_loss = history.history['val_loss']
+
+  epochs_range = range(epochs)
+
+  plt.figure(figsize=(8, 8))
+  plt.subplot(1, 2, 1)
+  plt.plot(epochs_range, acc, label='Training Accuracy')
+  plt.plot(epochs_range, val_acc, label='Validation Accuracy')
+  plt.legend(loc='lower right')
+  plt.title('Training and Validation Accuracy')
+
+  plt.subplot(1, 2, 2)
+  plt.plot(epochs_range, loss, label='Training Loss')
+  plt.plot(epochs_range, val_loss, label='Validation Loss')
+  plt.legend(loc='upper right')
+  plt.title('Training and Validation Loss')
+  plt.show()
+#+END_SRC
+
+#+RESULTS: 9beea513-dee3-4df3-ac8a-b1e464c68ec0
+:results:
+[[file:ein-images/ob-ein-8297e258680aef8a93b95e511bf4ca8c.png]]
+:end:
+
+* 過剰適合への対策：データの増強(Data augumentation)
+** Apply horizontal flip
+#+NAME: 822163f2-4732-4fc5-b0aa-20aa66feb9eb
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  image_gen = ImageDataGenerator(rescale=1. / 255, horizontal_flip=True)
+  train_data_gen = image_gen.flow_from_directory(batch_size=batch_size,
+                                                 directory=train_dir,
+                                                 shuffle=True,
+                                                 target_size=(IMG_HEIGHT,
+                                                              IMG_WIDTH))
+  augmented_images = [train_data_gen[0][0][0] for i in range(5)]
+
+  plotImages(augmented_images)
+#+END_SRC
+
+#+RESULTS: 822163f2-4732-4fc5-b0aa-20aa66feb9eb
+:results:
+Found 2000 images belonging to 2 classes.
+
+[[file:ein-images/ob-ein-300739b1f605399bdc8ac611d43137e5.png]]
+:end:
+
+** Randomly rotate the image
+#+NAME: 2834dfb7-c5ae-4575-98f9-bb69471d51b9
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  image_gen = ImageDataGenerator(rescale=1. / 255, rotation_range=45)
+  train_data_gen = image_gen.flow_from_directory(batch_size=batch_size,
+                                                 directory=train_dir,
+                                                 shuffle=True,
+                                                 target_size=(IMG_HEIGHT,
+                                                              IMG_WIDTH))
+
+  augmented_images = [train_data_gen[0][0][0] for i in range(5)]
+  plotImages(augmented_images)
+#+END_SRC
+
+#+RESULTS: 2834dfb7-c5ae-4575-98f9-bb69471d51b9
+:results:
+Found 2000 images belonging to 2 classes.
+
+[[file:ein-images/ob-ein-4e0adac668a4877bea43ece5f6c5cf16.png]]
+:end:
+
+** Apply zoom augmentation
+#+NAME: 916a5ea7-3ca4-48a9-90d8-7c63ade5a5f0
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  image_gen = ImageDataGenerator(rescale=1./255, zoom_range=0.5)
+  train_data_gen = image_gen.flow_from_directory(batch_size=batch_size,
+                                                 directory=train_dir,
+                                                 shuffle=True,
+                                                 target_size=(IMG_HEIGHT, IMG_WIDTH))
+
+  augmented_images = [train_data_gen[0][0][0] for i in range(5)]
+  plotImages(augmented_images)
+#+END_SRC
+
+#+RESULTS: 916a5ea7-3ca4-48a9-90d8-7c63ade5a5f0
+:results:
+Found 2000 images belonging to 2 classes.
+
+[[file:ein-images/ob-ein-dbadeb689d6fb4257e957849f6db7dd8.png]]
+:end:
+
+** 統合
+訓練データの作成
+#+NAME: 4b6fd746-ccd8-4e19-8121-913d04519bd4
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  image_gen_train = ImageDataGenerator(rescale=1. / 255,
+                                       rotation_range=45,
+                                       width_shift_range=.15,
+                                       height_shift_range=.15,
+                                       horizontal_flip=True,
+                                       zoom_range=0.5)
+
+  train_data_gen = image_gen_train.flow_from_directory(batch_size=batch_size,
+                                                       directory=train_dir,
+                                                       shuffle=True,
+                                                       target_size=(IMG_HEIGHT,
+                                                                    IMG_WIDTH),
+                                                       class_mode='binary')
+  augmented_images = [train_data_gen[0][0][0] for i in range(5)]
+  plotImages(augmented_images)
+#+END_SRC
+
+#+RESULTS: 4b6fd746-ccd8-4e19-8121-913d04519bd4
+:results:
+Found 2000 images belonging to 2 classes.
+
+[[file:ein-images/ob-ein-be40bd57c23aa3db9762a08fa81202f2.png]]
+:end:
+
+
+検証データの作成
+#+NAME: 606187be-e33b-4e9e-91fb-fc11fa06fe20
+#+BEGIN_SRC ein-python :session localhost :results raw drawer
+  image_gen_val = ImageDataGenerator(rescale=1. / 255)
+  val_data_gen = image_gen_val.flow_from_directory(batch_size=batch_size,
+                                                   directory=validation_dir,
+                                                   target_size=(IMG_HEIGHT,
+                                                                IMG_WIDTH),
+                                                   class_mode='binary')
+#+END_SRC
+
+#+RESULTS: 606187be-e33b-4e9e-91fb-fc11fa06fe20
+:results:
+Found 1000 images belonging to 2 classes.
+:end:
+
+* 過剰適合への対策：Dropout
+#+NAME: eb15deb0-3876-4208-9d38-5c14ee0da732
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  model_new = Sequential([
+      Conv2D(16,
+             3,
+             padding='same',
+             activation='relu',
+             input_shape=(IMG_HEIGHT, IMG_WIDTH, 3)),
+      MaxPooling2D(),
+      Dropout(0.2),
+      Conv2D(32, 3, padding='same', activation='relu'),
+      MaxPooling2D(),
+      Conv2D(64, 3, padding='same', activation='relu'),
+      MaxPooling2D(),
+      Dropout(0.2),
+      Flatten(),
+      Dense(512, activation='relu'),
+      Dense(1, activation='sigmoid')
+  ])
+
+  model_new.summary()
+#+END_SRC
+
+#+RESULTS: eb15deb0-3876-4208-9d38-5c14ee0da732
+:results:
+Model: "sequential_2"
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+conv2d_6 (Conv2D)            (None, 150, 150, 16)      448       
+_________________________________________________________________
+max_pooling2d_6 (MaxPooling2 (None, 75, 75, 16)        0         
+_________________________________________________________________
+dropout_2 (Dropout)          (None, 75, 75, 16)        0         
+_________________________________________________________________
+conv2d_7 (Conv2D)            (None, 75, 75, 32)        4640      
+_________________________________________________________________
+max_pooling2d_7 (MaxPooling2 (None, 37, 37, 32)        0         
+_________________________________________________________________
+conv2d_8 (Conv2D)            (None, 37, 37, 64)        18496     
+_________________________________________________________________
+max_pooling2d_8 (MaxPooling2 (None, 18, 18, 64)        0         
+_________________________________________________________________
+dropout_3 (Dropout)          (None, 18, 18, 64)        0         
+_________________________________________________________________
+flatten_2 (Flatten)          (None, 20736)             0         
+_________________________________________________________________
+dense_4 (Dense)              (None, 512)               10617344  
+_________________________________________________________________
+dense_5 (Dense)              (None, 1)                 513       
+=================================================================
+Total params: 10,641,441
+Trainable params: 10,641,441
+Non-trainable params: 0
+_________________________________________________________________
+:end:
+
+** モデルの訓練
+#+NAME: 539ebb6e-f740-4036-b0df-7ea15e9056c7
+#+BEGIN_SRC ein-python :session localhost :results none
+  model_new.compile(optimizer='adam',
+                    loss='binary_crossentropy',
+                    metrics=['accuracy'])
+
+  history = model_new.fit_generator(train_data_gen,
+                                    steps_per_epoch=total_train // batch_size,
+                                    epochs=epochs,
+                                    validation_data=val_data_gen,
+                                    validation_steps=total_val // batch_size)
+#+END_SRC
+
+#+RESULTS: 539ebb6e-f740-4036-b0df-7ea15e9056c7
+Epoch 15/15
+15/15 [==============================] - 23s 2s/step - loss: 0.6050 - accuracy: 0.6608 - val_loss: 0.5939 - val_accuracy: 0.6763
+
+** 結果の視覚化
+
+#+NAME: 0d2d2bef-eba9-476c-9934-6f23ef8e7f8b
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  acc = history.history['accuracy']
+  val_acc = history.history['val_accuracy']
+
+  loss = history.history['loss']
+  val_loss = history.history['val_loss']
+
+  epochs_range = range(epochs)
+
+  plt.figure(figsize=(8, 8))
+  plt.subplot(1, 2, 1)
+  plt.plot(epochs_range, acc, label='Training Accuracy')
+  plt.plot(epochs_range, val_acc, label='Validation Accuracy')
+  plt.legend(loc='lower right')
+  plt.title('Training and Validation Accuracy')
+
+  plt.subplot(1, 2, 2)
+  plt.plot(epochs_range, loss, label='Training Loss')
+  plt.plot(epochs_range, val_loss, label='Validation Loss')
+  plt.legend(loc='upper right')
+  plt.title('Training and Validation Loss')
+  plt.show()
+#+END_SRC
+
+#+RESULTS: 0d2d2bef-eba9-476c-9934-6f23ef8e7f8b
+:results:
+[[file:ein-images/ob-ein-aee077e38ae0eb1d79b6f1190b0811d8.png]]
+:end:
