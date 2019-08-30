@@ -1,0 +1,246 @@
+# -*- org-expo
+rt-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: tf.Text の取扱い
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+
+      from tensorflow import keras
+      from tensorflow.keras import layers
+      import tensorflow_text as text
+
+      import numpy as np
+      # import matplotlib.pyplot as plt
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      import pathlib
+      import random
+      # import IPython.display as display
+      
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+* Unicode の読み込み
+#+NAME: d444d56c-4fae-4733-a444-d9e5081799ab
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  # utf16 -> utf-8 translation
+  docs = tf.constant([
+      u'Everything not saved will be lost.'.encode('UTF-16-BE'),
+      u'Sad☹'.encode('UTF-16-BE')
+  ])
+  utf8_docs = tf.strings.unicode_transcode(docs,
+                                           input_encoding='UTF-16-BE',
+                                           output_encoding='UTF-8')
+  utf8_docs
+#+END_SRC
+
+#+RESULTS: d444d56c-4fae-4733-a444-d9e5081799ab
+:results:
+<tf.Tensor: id=3, shape=(2,), dtype=string, numpy=
+array([b'Everything not saved will be lost.', b'Sad\xe2\x98\xb9'],
+      dtype=object)>
+:end:
+* Tokenization
+tokenizer は文字列をトークンに分割するためのツールです。このトークンの例としては、単語やサブワード、数字などがありますが、タスクに応じていくつかの方法を選択することができます。
+
+TensorflowはInterfaceとして Tokenizer,  TokenizerWithOffset がある。それぞれ tokenize,  tokenize_with_offsets というメソッドを持っている。TokenizerWithOffset は元の文字列に対するバイトオフセットを取得するオプションがあるため、元のバイト列を知ることができるようになっている。
+
+文字列をトークン列にする都合上、入力データはこの過程で1次元増えることになる。
+** WhiteSpaceTokenizer
+#+NAME: 88ecdb30-0ab5-4a42-92cd-4636384c94e2
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  tokenizer = text.WhitespaceTokenizer()
+  tokens = tokenizer.tokenize(['everything not saved will be lost.', u'Sad☹'.encode('UTF-8')])
+  print(tokens.to_list())
+#+END_SRC
+
+#+RESULTS: 88ecdb30-0ab5-4a42-92cd-4636384c94e2
+:results:
+[[b'everything', b'not', b'saved', b'will', b'be', b'lost.'], [b'Sad\xe2\x98\xb9']]
+:end:
+
+
+** UnicodeScriptTokenizer
+#+NAME: 4ca0fd21-533a-402c-99c4-4cf40d1da3ad
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  tokenizer = text.UnicodeScriptTokenizer()
+  tokens = tokenizer.tokenize(['everything not saved will be lost.', u'Sad☹'.encode('UTF-8')])
+  print(tokens.to_list())
+#+END_SRC
+
+#+RESULTS: 4ca0fd21-533a-402c-99c4-4cf40d1da3ad
+:results:
+[[b'everything', b'not', b'saved', b'will', b'be', b'lost', b'.'], [b'Sad', b'\xe2\x98\xb9']]
+:end:
+
+** Unicode split
+#+NAME: 8430e98a-9fa8-47e7-bc15-ed6ff051a424
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+tokens = tf.strings.unicode_split([u"自然言語".encode('UTF-8')], 'UTF-8')
+tokens
+#+END_SRC
+
+#+RESULTS: 8430e98a-9fa8-47e7-bc15-ed6ff051a424
+:results:
+<tf.RaggedTensor [[b'\xe8\x87\xaa', b'\xe7\x84\xb6', b'\xe8\xa8\x80', b'\xe8\xaa\x9e']]>
+:end:
+
+** Offsets
+#+NAME: 9f9ca6b8-28ca-4ed9-9275-854cc4c7eb7e
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  tokenizer = text.UnicodeScriptTokenizer()
+  (tokens, offset_starts, offset_limits) = tokenizer.tokenize_with_offsets(
+      ['everything not saved will be lost.', u'Sad☹'.encode('UTF-8')])
+  print_infos([
+      'Tokens',
+      tokens.to_list(), '', 'starts',
+      offset_starts.to_list(), '', 'ends',
+      offset_limits.to_list()
+  ])
+#+END_SRC
+
+#+RESULTS: 9f9ca6b8-28ca-4ed9-9275-854cc4c7eb7e
+:results:
+Tokens
+[[b'everything', b'not', b'saved', b'will', b'be', b'lost', b'.'], [b'Sad', b'\xe2\x98\xb9']]
+
+starts
+[[0, 11, 15, 21, 26, 29, 33], [0, 3]]
+
+ends
+[[10, 14, 20, 25, 28, 33, 34], [3, 6]]
+:end:
+
+** TFData で扱う方法
+#+NAME: 9e080572-22a2-4653-afdc-902f17f0d619
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  docs = tf.data.Dataset.from_tensor_slices([['Never tell me the odds.'],
+                                             ["It's a trap!"]])
+  tokenizer = text.WhitespaceTokenizer()
+  tokenized_docs = docs.map(lambda x: tokenizer.tokenize(x))
+  iterator = iter(tokenized_docs)
+  print_infos([
+      next(iterator).to_list(),
+      next(iterator).to_list()
+  ])
+#+END_SRC
+
+#+RESULTS: 9e080572-22a2-4653-afdc-902f17f0d619
+:results:
+[[b'Never', b'tell', b'me', b'the', b'odds.']]
+[[b"It's", b'a', b'trap!']]
+:end:
+
+* その他のテキストデータを扱う際の Tips
+
+** Wordshape
+
+#+NAME: f3b3b76c-d912-4984-8525-0cb234b6cb23
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  tokenizer = text.WhitespaceTokenizer()
+  tokens = tokenizer.tokenize(['Everything not saved will be lost.', u'Sad☹'.encode('UTF-8')])
+
+  # Is capitalized?
+  f1 = text.wordshape(tokens, text.WordShape.HAS_TITLE_CASE)
+  # Are all letters uppercased?
+  f2 = text.wordshape(tokens, text.WordShape.IS_UPPERCASE)
+  # Does the token contain punctuation?
+  f3 = text.wordshape(tokens, text.WordShape.HAS_SOME_PUNCT_OR_SYMBOL)
+  # Is the token a number?
+  f4 = text.wordshape(tokens, text.WordShape.IS_NUMERIC_VALUE)
+
+  print(f1.to_list())
+  print(f2.to_list())
+  print(f3.to_list())
+  print(f4.to_list())
+#+END_SRC
+
+#+RESULTS: f3b3b76c-d912-4984-8525-0cb234b6cb23
+:results:
+[[True, False, False, False, False, False], [True]]
+[[False, False, False, False, False, False], [False]]
+[[False, False, False, False, False, True], [True]]
+[[False, False, False, False, False, False], [False]]
+:end:
+
+** N-gram & Sliding Window
+2 - gram の場合
+#+NAME: fa15e386-5acb-4aff-b26a-57cc29a870e2
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  tokenizer = text.WhitespaceTokenizer()
+  tokens = tokenizer.tokenize(
+      ['Everything not saved will be lost.', u'Sad☹'.encode('UTF-8')])
+
+  # Ngrams, in this case bi-gram (n = 2)
+  bigrams = text.ngrams(tokens, 2, reduction_type=text.Reduction.STRING_JOIN)
+
+  print(bigrams.to_list())
+#+END_SRC
+
+#+RESULTS: fa15e386-5acb-4aff-b26a-57cc29a870e2
+:results:
+[[b'Everything not', b'not saved', b'saved will', b'will be', b'be lost.'], []]
+:end:
+
+
