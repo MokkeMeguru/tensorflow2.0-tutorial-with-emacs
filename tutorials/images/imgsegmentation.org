@@ -1,0 +1,371 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: Image  Segmentation
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+      from tensorflow_examples.models.pix2pix import pix2pix
+
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      from tensorflow.keras.models import Sequential
+      from tensorflow.keras.layers import Dense, Conv2D, Flatten, Dropout, MaxPooling2D
+      from tensorflow.keras.preprocessing.image import ImageDataGenerator
+      # import tensorflow_text as text
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      import pathlib
+      import random
+      import IPython.display as display
+      from IPython.display import clear_output
+      import PIL.Image as Image
+      import urllib3
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+          # '{:25}: {}'.format("tensorflow\'s version", hub.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+      urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+* データセットのダウンロード
+  #+NAME: d842878e-74b0-49fe-9ba8-d9eec14a3e8c
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    dataset, info = tfds.load('oxford_iiit_pet:3.0.0', with_info=True)
+  #+END_SRC
+
+  #+RESULTS: d842878e-74b0-49fe-9ba8-d9eec14a3e8c
+  :results:
+  W0901 01:27:12.588210 140079398397568 dataset_builder.py:439] Warning: Setting shuffle_files=True because split=TRAIN and shuffle_files=None. This behavior will be deprecated on 2019-08-06, at which point shuffle_files=False will be the default for all splits.
+  :end:
+  
+  #+NAME: faead279-c5a8-49cd-b109-f5baaf271c76
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    def normalize(input_image, input_mask):
+        input_image = tf.cast(input_image, tf.float32) / 128.0 - 1
+        input_mask -= 1
+        return input_image, input_mask
+
+
+    @tf.function
+    def load_image_train(datapoint):
+        input_image = tf.image.resize(datapoint['image'], (128, 128))
+        input_mask = tf.image.resize(datapoint['segmentation_mask'], (128, 128))
+
+        if tf.random.uniform(()) > 0.5:
+            input_image = tf.image.flip_left_right(input_image)
+            input_mask = tf.image.flip_left_right(input_mask)
+
+        input_image, input_mask = normalize(input_image, input_mask)
+
+        return input_image, input_mask
+
+
+    @tf.function
+    def load_image_test(datapoint):
+        input_image = tf.image.resize(datapoint['image'], (128, 128))
+        input_mask = tf.image.resize(datapoint['segmentation_mask'], (128, 128))
+
+        input_image, input_mask = normalize(input_image, input_mask)
+
+        return input_image, input_mask
+  #+END_SRC
+
+  #+RESULTS: faead279-c5a8-49cd-b109-f5baaf271c76
+  :results:
+  :end:
+
+
+  #+NAME: f14921e8-5a5d-4d87-a3b4-b6631eb54bb0
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    TRAIN_LENGTH = info.splits['train'].num_examples
+    BATCH_SIZE = 64
+    BUFFER_SIZE = 1000
+    STEPS_PER_EPOCH = TRAIN_LENGTH // BATCH_SIZE
+  #+END_SRC
+
+  #+RESULTS: f14921e8-5a5d-4d87-a3b4-b6631eb54bb0
+  :results:
+  :end:
+
+  データセットの作成
+  #+NAME: 001230f0-fc2d-4bae-a759-61ab47630fa4
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    train = dataset['train'].map(load_image_train,
+                                 num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    test = dataset['test'].map(load_image_test)
+
+    train_dataset = train.cache().shuffle(BUFFER_SIZE).batch(BATCH_SIZE).repeat()
+    train_dataset = train_dataset.prefetch(
+        buffer_size=tf.data.experimental.AUTOTUNE)
+    test_dataset = test.batch(BATCH_SIZE)
+  #+END_SRC
+
+  #+RESULTS: 001230f0-fc2d-4bae-a759-61ab47630fa4
+  :results:
+  :end:
+
+  #+NAME: 9e67ec8d-02ab-475a-9368-359979abeb12
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    def display(display_list):
+        plt.figure(figsize=(15, 15))
+
+        title = ['Input Image', 'True Mask', 'Predicted Mask']
+
+        for i in range(len(display_list)):
+            plt.subplot(1, len(display_list), i + 1)
+            plt.title(title[i])
+            plt.imshow(tf.keras.preprocessing.image.array_to_img(display_list[i]))
+            plt.axis('off')
+        plt.show()
+
+
+    for image, mask in train.take(1):
+        sample_image, sample_mask = image, mask
+    display([sample_image, sample_mask])
+  #+END_SRC
+
+  #+RESULTS: 9e67ec8d-02ab-475a-9368-359979abeb12
+  :results:
+  [[file:ein-images/ob-ein-3a489dc00e76eed291cde4505d5fa291.png]]
+  :end:
+* モデルの定義
+  #+NAME: dff17be7-3a97-4786-a59f-e022c4ad57c6
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    OUTPUT_CHANNELS = 3
+
+    # Down (Pretrained model)
+    base_model = keras.applications.MobileNetV2(input_shape=[128, 128, 3],
+                                                include_top=False)
+
+    # Use the activations of these layers
+    layer_names = [
+        'block_1_expand_relu',  # 64x64
+        'block_3_expand_relu',  # 32x32
+        'block_6_expand_relu',  # 16x16
+        'block_13_expand_relu',  # 8x8
+        'block_16_project',  # 4x4
+    ]
+    layers = [base_model.get_layer(name).output for name in layer_names]
+
+    # Create the feature extraction model
+    down_stack = keras.Model(inputs=base_model.input, outputs=layers)
+
+    down_stack.trainable = False
+
+    # Up
+    up_stack = [
+        pix2pix.upsample(512, 3),  # 4x4 -> 8x8
+        pix2pix.upsample(256, 3),  # 8x8 -> 16x16
+        pix2pix.upsample(128, 3),  # 16x16 -> 32x32
+        pix2pix.upsample(64, 3),  # 32x32 -> 64x64
+    ]
+  #+END_SRC
+
+  #+RESULTS: dff17be7-3a97-4786-a59f-e022c4ad57c6
+  :results:
+  :end:
+
+  Keras の functional API を用いてモデルを定義しました。
+  #+NAME: 5ce425b3-f201-4449-b1fc-97b222942bf3
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    def unet_model(output_channels):
+
+        # This is the last layer of the model
+        last = tf.keras.layers.Conv2DTranspose(
+            output_channels, 3, strides=2, padding='same',
+            activation='softmax')  #64x64 -> 128x128
+
+        inputs = tf.keras.layers.Input(shape=[128, 128, 3])
+        x = inputs
+
+        # Downsampling through the model
+        skips = down_stack(x)
+        x = skips[-1]
+        skips = reversed(skips[:-1])
+
+        # Upsampling and establishing the skip connections
+        for up, skip in zip(up_stack, skips):
+            x = up(x)
+            concat = tf.keras.layers.Concatenate()
+            x = concat([x, skip])
+
+        x = last(x)
+
+        return tf.keras.Model(inputs=inputs, outputs=x)
+  #+END_SRC
+
+  #+RESULTS: 5ce425b3-f201-4449-b1fc-97b222942bf3
+  :results:
+  :end:
+* モデルの訓練
+  モデルのコンパイル
+  #+NAME: 590d01e9-2ce0-48d9-a4e1-1eb7a776ff8f
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    model = unet_model(OUTPUT_CHANNELS)
+    model.compile(optimizer='adam',
+                  loss='sparse_categorical_crossentropy',
+                  metrics=['accuracy'])
+
+
+    def create_mask(pred_mask):
+        pred_mask = tf.argmax(pred_mask, axis=-1)
+        pred_mask = pred_mask[..., tf.newaxis]
+        return pred_mask[0]
+
+
+    def show_predictions(dataset=None, num=1):
+        if dataset:
+            for image, mask in dataset.take(num):
+                pred_mask = model.predict(image)
+                display([image[0], mask[0], create_mask(pred_mask)])
+        else:
+            display([
+                sample_image, sample_mask,
+                create_mask(model.predict(sample_image[tf.newaxis, ...]))
+            ])
+  #+END_SRC
+
+  #+RESULTS: 590d01e9-2ce0-48d9-a4e1-1eb7a776ff8f
+  :results:
+  :end:
+  
+  学習前の予測
+  #+NAME: 1ba7ba27-d1c5-4a7d-b831-8a9eb1ac0b1a
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    show_predictions()
+  #+END_SRC
+
+  #+RESULTS: 1ba7ba27-d1c5-4a7d-b831-8a9eb1ac0b1a
+  :results:
+  [[file:ein-images/ob-ein-9cc0fe3c230cc50b1e297c4065595326.png]]
+  :end:
+
+  #+NAME: 28e755e2-19ee-4fc2-ad89-a236e0555d90
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    class DisplayCallback(tf.keras.callbacks.Callback):
+        def on_epoch_end(self, epoch, logs=None):
+            clear_output(wait=True)
+            show_predictions()
+            print('\nSample Prediction after epoch {}\n'.format(epoch + 1))
+
+
+    EPOCHS = 20
+    VAL_SUBSPLITS = 5
+    VALIDATION_STEPS = info.splits[
+        'test'].num_examples // BATCH_SIZE // VAL_SUBSPLITS
+  #+END_SRC
+
+  #+RESULTS: 28e755e2-19ee-4fc2-ad89-a236e0555d90
+  :results:
+  :end:
+
+
+  #+NAME: 2cf3035f-7ea5-49f7-a03e-c31d5424371d
+  #+BEGIN_SRC ein-python :session localhost :results none
+    model_history = model.fit(train_dataset,
+                              epochs=EPOCHS,
+                              steps_per_epoch=STEPS_PER_EPOCH,
+                              validation_steps=VALIDATION_STEPS,
+                              validation_data=test_dataset,
+                              callbacks=[DisplayCallback()])
+  #+END_SRC
+
+  #+RESULTS: 2cf3035f-7ea5-49f7-a03e-c31d5424371d
+  57/57 [==============================] - 86s 2s/step - loss: 0.1431 - accuracy: 0.9350 - val_loss: 0.3019 - val_accuracy: 0.8905
+
+  #+NAME: f3cbc7c4-db4d-4ae3-9fb5-590d3fc507f6
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    loss = model_history.history['loss']
+    val_loss = model_history.history['val_loss']
+
+    epochs = range(EPOCHS)
+
+    plt.figure()
+    plt.plot(epochs, loss, 'r', label='Training loss')
+    plt.plot(epochs, val_loss, 'bo', label='Validation loss')
+    plt.title('Training and Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss Value')
+    plt.ylim([0, 1])
+    plt.legend()
+    plt.show()
+  #+END_SRC
+
+  #+RESULTS: f3cbc7c4-db4d-4ae3-9fb5-590d3fc507f6
+  :results:
+  [[file:ein-images/ob-ein-cbf0dbbd7c1512ff316136071a70b59f.png]]
+  :end:
+* 予測を行う
+  #+NAME: f4cec4be-fc49-4883-ab0c-1bf533a9df52
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    show_predictions(test_dataset, 3)
+  #+END_SRC
+
+  #+RESULTS: f4cec4be-fc49-4883-ab0c-1bf533a9df52
+  :results:
+  [[file:ein-images/ob-ein-c719b4424dbe4211c5281ef21a64ee26.png]]
+  [[file:ein-images/ob-ein-9d160bcc7e68d8a7eecd9fade4bef08a.png]]
+  [[file:ein-images/ob-ein-3c4edc8b2f6a84e0f6a64ebe6d7f7d26.png]]
+  :end:
+
