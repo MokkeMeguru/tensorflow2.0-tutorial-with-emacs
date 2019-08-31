@@ -1,0 +1,329 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: Image  Segmentation
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+      # from tensorflow_examples.models.pix2pix import pix2pix
+
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      from tensorflow.keras.models import Sequential
+      from tensorflow.keras.layers import Dense, Conv2D, Flatten, Dropout, MaxPooling2D
+      from tensorflow.keras.preprocessing.image import ImageDataGenerator
+      # import tensorflow_text as text
+
+      import numpy as np
+      # import matplotlib.pyplot as plt
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      import pathlib
+      import random
+      # import IPython.display as display
+      # from IPython.display import clear_output
+      # import PIL.Image as Image
+      import urllib3
+      import io
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+          # '{:25}: {}'.format("tensorflow\'s version", hub.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+      urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+
+* Embedding レイヤーの作成
+  #+NAME: aed4033b-e9dd-4c63-b746-23e65b20cee3
+  #+BEGIN_SRC ein-python :session localhost :results none
+    # 1000 = maximum word index + 1
+    embedding_layer = layers.Embedding(1000, 32)
+  #+END_SRC
+
+  #+RESULTS: aed4033b-e9dd-4c63-b746-23e65b20cee3
+
+  #+NAME: 4f53ea2b-39b3-4c31-876c-804c5cf0f71c
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    vocab_size = 10000
+    imdb = keras.datasets.imdb
+    (train_data,
+     train_labels), (test_data, test_labels) = imdb.load_data(num_words=vocab_size)
+
+    print(train_data[0])
+  #+END_SRC
+
+  #+RESULTS: 4f53ea2b-39b3-4c31-876c-804c5cf0f71c
+  :results:
+  [1, 14, 22, 16, 43, 530, 973, 1622, 1385, 65, 458, 4468, 66, 3941, 4, 173, 36, 256, 5, 25, 100, 43, 838, 112, 50, 670, 2, 9, 35, 480, 284, 5, 150, 4, 172, 112, 167, 2, 336, 385, 39, 4, 172, 4536, 1111, 17, 546, 38, 13, 447, 4, 192, 50, 16, 6, 147, 2025, 19, 14, 22, 4, 1920, 4613, 469, 4, 22, 71, 87, 12, 16, 43, 530, 38, 76, 15, 13, 1247, 4, 22, 17, 515, 17, 12, 16, 626, 18, 2, 5, 62, 386, 12, 8, 316, 8, 106, 5, 4, 2223, 5244, 16, 480, 66, 3785, 33, 4, 130, 12, 16, 38, 619, 5, 25, 124, 51, 36, 135, 48, 25, 1415, 33, 6, 22, 12, 215, 28, 77, 52, 5, 14, 407, 16, 82, 2, 8, 4, 107, 117, 5952, 15, 256, 4, 2, 7, 3766, 5, 723, 36, 71, 43, 530, 476, 26, 400, 317, 46, 7, 4, 2, 1029, 13, 104, 88, 4, 381, 15, 297, 98, 32, 2071, 56, 26, 141, 6, 194, 7486, 18, 4, 226, 22, 21, 134, 476, 26, 480, 5, 144, 30, 5535, 18, 51, 36, 28, 224, 92, 25, 104, 4, 226, 65, 16, 38, 1334, 88, 12, 16, 283, 5, 16, 4472, 113, 103, 32, 15, 16, 5345, 19, 178, 32]
+  :end:
+
+** Integer to words
+   #+NAME: 8cff5556-5e9a-485a-8035-cd8d9697e709
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     # A dictionary mapping words to an integer index
+     word_index = imdb.get_word_index()
+
+     # The first indices are reserverd
+     word_index = {k: (v + 3) for k, v in word_index.items()}
+     word_index['<PAD>'] = 0
+     word_index['<START>'] = 1
+     word_index['<UNK>'] = 2  # unknown
+     word_index['<UNUSED>'] = 3
+
+     reverse_word_index = dict([(value, key)
+                                for (key, value) in word_index.items()])
+
+
+     def decode_review(text):
+         return ' '.join([reverse_word_index.get(i, '?') for i in text])
+
+
+     decode_review(train_data[0])
+   #+END_SRC
+
+   #+RESULTS: 8cff5556-5e9a-485a-8035-cd8d9697e709
+   :results:
+   "<START> this film was just brilliant casting location scenery story direction everyone's really suited the part they played and you could just imagine being there robert <UNK> is an amazing actor and now the same being director <UNK> father came from the same scottish island as myself so i loved the fact there was a real connection with this film the witty remarks throughout the film were great it was just brilliant so much that i bought the film as soon as it was released for <UNK> and would recommend it to everyone to watch and the fly fishing was amazing really cried at the end it was so sad and you know what they say if you cry at a film it must have been good and this definitely was also <UNK> to the two little boy's that played the <UNK> of norman and paul they were just brilliant children are often left out of the <UNK> list i think because the stars that play them all grown up are such a big profile for the whole film but these children are amazing and should be praised for what they have done don't you think the whole story was so lovely because it was true and was someone's life after all that was shared with us all"
+   :end:
+
+#+NAME: a05cb635-0774-4d59-bc94-f2bacac7b49c
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  maxlen = 500
+  train_data = keras.preprocessing.sequence.pad_sequences(
+      train_data, value=word_index['<PAD>'], padding='post', maxlen=maxlen)
+  test_data = keras.preprocessing.sequence.pad_sequences(
+      test_data, value=word_index['<PAD>'], padding='post', maxlen=maxlen)
+
+  print_infos([
+      'raw',
+      train_data[0],
+      '',
+      'decoded',
+      decode_review(train_data[0])
+  ])
+#+END_SRC
+
+#+RESULTS: a05cb635-0774-4d59-bc94-f2bacac7b49c
+:results:
+raw
+[   1   14   22   16   43  530  973 1622 1385   65  458 4468   66 3941
+    4  173   36  256    5   25  100   43  838  112   50  670    2    9
+   35  480  284    5  150    4  172  112  167    2  336  385   39    4
+  172 4536 1111   17  546   38   13  447    4  192   50   16    6  147
+ 2025   19   14   22    4 1920 4613  469    4   22   71   87   12   16
+   43  530   38   76   15   13 1247    4   22   17  515   17   12   16
+  626   18    2    5   62  386   12    8  316    8  106    5    4 2223
+ 5244   16  480   66 3785   33    4  130   12   16   38  619    5   25
+  124   51   36  135   48   25 1415   33    6   22   12  215   28   77
+   52    5   14  407   16   82    2    8    4  107  117 5952   15  256
+    4    2    7 3766    5  723   36   71   43  530  476   26  400  317
+   46    7    4    2 1029   13  104   88    4  381   15  297   98   32
+ 2071   56   26  141    6  194 7486   18    4  226   22   21  134  476
+   26  480    5  144   30 5535   18   51   36   28  224   92   25  104
+    4  226   65   16   38 1334   88   12   16  283    5   16 4472  113
+  103   32   15   16 5345   19  178   32    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0    0    0    0    0
+    0    0    0    0    0    0    0    0    0    0]
+
+decoded
+<START> this film was just brilliant casting location scenery story direction everyone's really suited the part they played and you could just imagine being there robert <UNK> is an amazing actor and now the same being director <UNK> father came from the same scottish island as myself so i loved the fact there was a real connection with this film the witty remarks throughout the film were great it was just brilliant so much that i bought the film as soon as it was released for <UNK> and would recommend it to everyone to watch and the fly fishing was amazing really cried at the end it was so sad and you know what they say if you cry at a film it must have been good and this definitely was also <UNK> to the two little boy's that played the <UNK> of norman and paul they were just brilliant children are often left out of the <UNK> list i think because the stars that play them all grown up are such a big profile for the whole film but these children are amazing and should be praised for what they have done don't you think the whole story was so lovely because it was true and was someone's life after all that was shared with us all <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD> <PAD>
+:end:
+
+** シンプルなモデルを使って学習する
+   Embedding の表示がおかしいのは仕様です。
+  #+NAME: 0705642a-e95b-4133-be1c-055a8f98ca86
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    embedding_dim = 16
+
+    model = Sequential([
+        layers.Embedding(vocab_size, embedding_dim, input_length=maxlen),
+        layers.GlobalAveragePooling1D(),
+        layers.Dense(16, activation='relu'),
+        layers.Dense(1, activation='sigmoid')
+    ])
+
+    model.summary()
+  #+END_SRC
+
+  #+RESULTS: 0705642a-e95b-4133-be1c-055a8f98ca86
+  :results:
+  Model: "sequential_11"
+  _________________________________________________________________
+  Layer (type)                 Output Shape              Param #   
+  =================================================================
+  embedding_3 (Embedding)      (None, 500, 16)           160000    
+  _________________________________________________________________
+  global_average_pooling1d_2 ( (None, 16)                0         
+  _________________________________________________________________
+  dense_5 (Dense)              (None, 16)                272       
+  _________________________________________________________________
+  dense_6 (Dense)              (None, 1)                 17        
+  =================================================================
+  Total params: 160,289
+  Trainable params: 160,289
+  Non-trainable params: 0
+  _________________________________________________________________
+  :end:
+
+  #+NAME: 6a1e65b8-0cf9-4830-a2a3-5952c2edfc44
+  #+BEGIN_SRC ein-python :session localhost :results none
+    model.compile(optimizer='adam',
+                  loss='binary_crossentropy',
+                  metrics=['accuracy'])
+
+    history = model.fit(train_data,
+                        train_labels,
+                        epochs=30,
+                        batch_size=512,
+                        validation_data=(test_data, test_labels))
+  #+END_SRC
+
+  #+RESULTS: 6a1e65b8-0cf9-4830-a2a3-5952c2edfc44
+  Epoch 30/30
+  25000/25000 [==============================] - 1s 43us/sample - loss: 0.1508 - accuracy: 0.9502 - val_loss: 0.2909 - val_accuracy: 0.8854
+
+  
+** 訓練ログの視覚化
+   #+NAME: c48826e1-d2a7-4c78-9be3-c18ce2cbcd57
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     history_dict = history.history
+
+     acc = history_dict['accuracy']
+     val_acc = history_dict['val_accuracy']
+     loss = history_dict['loss']
+     val_loss = history_dict['val_loss']
+
+     epochs = range(1, len(acc) + 1)
+
+     plt.figure(figsize=(12, 9))
+     plt.plot(epochs, loss, 'bo', label='Training loss')
+     plt.plot(epochs, val_loss, 'b', label='Validation loss')
+     plt.title('Training and validation loss')
+     plt.xlabel('Epochs')
+     plt.ylabel('Loss')
+     plt.legend()
+     plt.show()
+
+     plt.figure(figsize=(12, 9))
+     plt.plot(epochs, acc, 'bo', label='Training acc')
+     plt.plot(epochs, val_acc, 'b', label='Validation acc')
+     plt.title('Training and validation accuracy')
+     plt.xlabel('Epochs')
+     plt.ylabel('Accuracy')
+     plt.legend(loc='lower right')
+     plt.ylim((0.5, 1))
+     plt.show()
+   #+END_SRC
+
+   #+RESULTS: c48826e1-d2a7-4c78-9be3-c18ce2cbcd57
+   :results:
+   [[file:ein-images/ob-ein-bc910ab6ffbae9cfb33592be18b3d54d.png]]
+   [[file:ein-images/ob-ein-75d49eb5966af69ee1b3e7ebe93a13c8.png]]
+   :end:
+
+* 得られた埋め込みを取得する
+  #+NAME: 7ac02a77-539c-4d19-ace0-936bbccda308
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+      e = model.layers[0]
+    weights = e.get_weights()[0]
+    print(weights.shape) # shape: (vocab_size, embedding_dim)
+  #+END_SRC
+
+  #+RESULTS: 7ac02a77-539c-4d19-ace0-936bbccda308
+  :results:
+  (10000, 16)
+  :end:
+
+  #+NAME: be40a6cc-99ea-4731-8a11-e4decc5cfd16
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    out_v = io.open('vecs.tsv', 'w', encoding='utf-8')
+    out_m = io.open('meta.tsv', 'w', encoding='utf-8')
+    for word_num in range(vocab_size):
+        word = reverse_word_index[word_num]
+        embeddings = weights[word_num]
+        out_m.write(word + "\n")
+        out_v.write('\t'.join([str(x) for x in embeddings]) + "\n")
+    out_v.close()
+    out_m.close()
+  #+END_SRC
+
+  #+RESULTS: be40a6cc-99ea-4731-8a11-e4decc5cfd16
+  :results:
+  :end:
+
+  [[http://projector.tensorflow.org/][Embedding Projector]] へデータを転送することで、視覚化することができます。

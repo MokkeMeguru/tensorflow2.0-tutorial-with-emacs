@@ -25,3 +25,4 @@ tutorials/basic/training_2/
 *.tfrecord
 /tutorials/dataPreprocessing/Untitled.ipynb
 /tutorials/images/Untitled.ipynb
+*.tsv
