@@ -1,0 +1,437 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: TensorFlow Hub with Keras
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      import tensorflow_hub as hub
+      # import tensorflow_datasets as tfds
+
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      from tensorflow.keras.models import Sequential
+      from tensorflow.keras.layers import Dense, Conv2D, Flatten, Dropout, MaxPooling2D
+      from tensorflow.keras.preprocessing.image import ImageDataGenerator
+      # import tensorflow_text as text
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      import pathlib
+      import random
+      # import IPython.display as display
+      import PIL.Image as Image
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+          '{:25}: {}'.format("tensorflow\'s version", hub.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  tensorflow's version     : 0.6.0
+  :end:
+
+* ImageNet モデルのインポート
+** ImageNet のインポート
+  #+NAME: 794a92e1-36b1-49db-8f14-2cc37529c2dc
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    classifier_url = "https://tfhub.dev/google/tf2-preview/mobilenet_v2/classification/2"  #@param {type:"string"}
+
+    IMAGE_SHAPE = (224, 224)
+
+    classifier = tf.keras.Sequential(
+        [hub.KerasLayer(classifier_url, input_shape=IMAGE_SHAPE + (3, ))])
+
+    classifier.summary()
+  #+END_SRC
+
+  #+RESULTS: 794a92e1-36b1-49db-8f14-2cc37529c2dc
+  :results:
+  Model: "sequential_2"
+  _________________________________________________________________
+  Layer (type)                 Output Shape              Param #   
+  =================================================================
+  keras_layer_2 (KerasLayer)   (None, 1001)              3540265   
+  =================================================================
+  Total params: 3,540,265
+  Trainable params: 0
+  Non-trainable params: 3,540,265
+  _________________________________________________________________
+  :end:
+
+** 単一画像を用いて実験する
+   #+NAME: e7e2f16b-fd19-413e-8629-e7d72997da21
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     grace_hopper = keras.utils.get_file(
+         'image.jpg',
+         'https://storage.googleapis.com/download.tensorflow.org/example_images/grace_hopper.jpg'
+     )
+     grace_hopper = Image.open(grace_hopper).resize(IMAGE_SHAPE)
+     grace_hopper
+   #+END_SRC
+
+   #+RESULTS: e7e2f16b-fd19-413e-8629-e7d72997da21
+   :results:
+   [[file:ein-images/ob-ein-3d7d67d8f242c4284c6c2d42b6104f20.png]]
+   :end:
+
+#+NAME: 5678a976-28ed-47d7-958b-0463eca69713
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  grace_hopper = np.array(grace_hopper) / 255.0
+  grace_hopper.shape
+#+END_SRC
+
+#+RESULTS: 5678a976-28ed-47d7-958b-0463eca69713
+:results:
+(224, 224, 3)
+:end:
+#+NAME: 453c64d9-7a5a-4e1d-b305-b9c4ed7417f0
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  # grace_hopper[np.newaxis, ...].shape => (1, 224, 224, 3)
+  result = classifier.predict(grace_hopper[np.newaxis, ...])
+  result.shape
+#+END_SRC
+
+#+RESULTS: 453c64d9-7a5a-4e1d-b305-b9c4ed7417f0
+:results:
+(1, 1001)
+:end:
+
+#+NAME: 38f95e6d-ae3f-452d-b36e-eb2ce0e02f40
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  predicted_class = np.argmax(result[0], axis=-1)
+  predicted_class
+#+END_SRC
+
+#+RESULTS: 38f95e6d-ae3f-452d-b36e-eb2ce0e02f40
+:results:
+653
+:end:
+
+** 予測 id をデコードする
+   #+NAME: f3f6c0af-c69d-48c2-8f71-799240c42857
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+   labels_path = tf.keras.utils.get_file('ImageNetLabels.txt','https://storage.googleapis.com/download.tensorflow.org/data/ImageNetLabels.txt')
+   imagenet_labels = np.array(open(labels_path).read().splitlines())
+   imagenet_labels
+   #+END_SRC
+
+   #+RESULTS: f3f6c0af-c69d-48c2-8f71-799240c42857
+   :results:
+   array(['background', 'tench', 'goldfish', ..., 'bolete', 'ear',
+          'toilet tissue'], dtype='<U30')
+   :end:
+   #+NAME: afa418f5-6970-44c7-91c5-d8c28690f36c
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     plt.imshow(grace_hopper)
+     plt.axis('off')
+     predicted_class_name = imagenet_labels[predicted_class]
+     _ = plt.title("Prediction: " + predicted_class_name.title())
+   #+END_SRC
+
+   #+RESULTS: afa418f5-6970-44c7-91c5-d8c28690f36c
+   :results:
+   [[file:ein-images/ob-ein-b2f0c863531e7b19ff6902916984965f.png]]
+   :end:
+
+* シンプルな転移学習
+
+** データセットのダウンロード
+   #+NAME: 7dfab94f-90c0-4afa-8cac-d80f891592de
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     data_root = tf.keras.utils.get_file(
+         'flower_photos',
+         'https://storage.googleapis.com/download.tensorflow.org/example_images/flower_photos.tgz',
+         untar=True)
+
+     image_generator = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1 /
+                                                                       255)
+     image_data = image_generator.flow_from_directory(str(data_root),
+                                                      target_size=IMAGE_SHAPE)
+     print('')
+
+     for image_batch, label_batch in image_data:
+         print("Image batch shape: ", image_batch.shape)
+         print("Label batch shape: ", label_batch.shape)
+         break
+   #+END_SRC
+
+   #+RESULTS: 7dfab94f-90c0-4afa-8cac-d80f891592de
+   :results:
+   Found 3670 images belonging to 5 classes.
+
+   Image batch shape:  (32, 224, 224, 3)
+   Label batch shape:  (32, 5)
+   :end:
+
+** ImageNet を用いた予測
+   #+NAME: 798cbf4f-18e0-4262-8228-3351d06b0ebb
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     result_batch = classifier.predict(image_batch)
+     print(result_batch.shape)
+
+     predicted_class_names = imagenet_labels[np.argmax(result_batch, axis=-1)]
+     print(predicted_class_names)
+
+     plt.figure(figsize=(10, 9))
+     plt.subplots_adjust(hspace=0.5)
+     for n in range(30):
+         plt.subplot(6, 5, n + 1)
+         plt.imshow(image_batch[n])
+         plt.title(predicted_class_names[n])
+         plt.axis('off')
+     _ = plt.suptitle("ImageNet predictions")
+   #+END_SRC
+
+   #+RESULTS: 798cbf4f-18e0-4262-8228-3351d06b0ebb
+   :results:
+   (32, 1001)
+   ['daisy' 'conch' 'cardoon' 'pot' 'bonnet' 'rapeseed' 'handkerchief'
+    'daisy' 'sulphur-crested cockatoo' 'picket fence' 'daisy' 'hip' 'daisy'
+    'picket fence' 'knot' 'sea urchin' 'daisy' 'bee' 'mask' 'fire screen'
+    'crane' 'hip' 'daisy' 'bee' 'daisy' 'daisy' "yellow lady's slipper"
+    'daisy' 'confectionery' 'daisy' 'feather boa' 'picket fence']
+
+   [[file:ein-images/ob-ein-a0321ae0e2c814ba4b7e49dacf125afa.png]]
+   :end:
+
+** headless モデル + 分類レイヤー
+   Headless モデルのインポート
+   #+NAME: fd996628-e695-4c73-9428-c13d78d5a15e
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     feature_extractor_url = "https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/2"  #@param {type:"string"}
+     feature_extractor_layer = hub.KerasLayer(feature_extractor_url,
+                                              input_shape=(224, 224, 3))
+     feature_batch = feature_extractor_layer(image_batch)
+     print(feature_batch.shape)
+   #+END_SRC
+
+   #+RESULTS: fd996628-e695-4c73-9428-c13d78d5a15e
+   :results:
+   (32, 1280)
+   :end:
+
+   分類レイヤー (head layer) の追加
+   #+NAME: ebf7e051-4c80-4f37-b91f-d90acf47baf9
+   #+BEGIN_SRC ein-python :session localhost :results raw  drawer :exports both
+     feature_extractor_layer.trainable = False
+
+     model = tf.keras.Sequential([
+         feature_extractor_layer,
+         layers.Dense(image_data.num_classes, activation='softmax')
+     ])
+
+     model.summary()
+   #+END_SRC
+
+   #+RESULTS: ebf7e051-4c80-4f37-b91f-d90acf47baf9
+   :results:
+   Model: "sequential_7"
+   _________________________________________________________________
+   Layer (type)                 Output Shape              Param #   
+   =================================================================
+   keras_layer_7 (KerasLayer)   (None, 1280)              2257984   
+   _________________________________________________________________
+   dense_4 (Dense)              (None, 5)                 6405      
+   =================================================================
+   Total params: 2,264,389
+   Trainable params: 6,405
+   Non-trainable params: 2,257,984
+   _________________________________________________________________
+   :end:
+
+** モデルの訓練
+   #+NAME: faa40ba2-fec1-4f11-a945-35ec1551049e
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer
+     model.compile(optimizer=keras.optimizers.Adam(),
+                   loss='categorical_crossentropy',
+                   metrics=['acc'])
+   #+END_SRC
+
+   #+RESULTS: faa40ba2-fec1-4f11-a945-35ec1551049e
+   :results:
+   :end:
+
+   コールバックの作成(2 epoch しか訓練しないため、記録を batch 毎に行う)
+   #+NAME: 777a9978-0f15-4bf5-ab39-aaa79a61a5bf
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer
+     class CollectBatchStats(tf.keras.callbacks.Callback):
+         def __init__(self):
+             self.batch_losses = []
+             self.batch_acc = []
+
+         def on_train_batch_end(self, batch, logs=None):
+             self.batch_losses.append(logs['loss'])
+             self.batch_acc.append(logs['acc'])
+             self.model.reset_metrics()
+   #+END_SRC
+
+   #+RESULTS: 777a9978-0f15-4bf5-ab39-aaa79a61a5bf
+   :results:
+   :end:
+
+   #+NAME: 34c79b2f-6ecb-4fd1-81e7-41ad03e1dada
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     steps_per_epoch = np.ceil(image_data.samples / image_data.batch_size)
+
+     batch_stats_callback = CollectBatchStats()
+
+     history = model.fit(image_data,
+                         epochs=2,
+                         steps_per_epoch=steps_per_epoch,
+                         # callbacks=[batch_stats_callback]
+)
+   #+END_SRC
+
+   #+RESULTS: 34c79b2f-6ecb-4fd1-81e7-41ad03e1dada
+   :results:
+
+   InvalidArgumentErrorTraceback (most recent call last)
+   <ipython-input-63-8c922ea0512f> in <module>
+         5 history = model.fit(image_data,
+         6                     epochs=2,
+   ----> 7                     steps_per_epoch=steps_per_epoch,
+         8                     # callbacks=[batch_stats_callback]
+         9 )
+
+   ~/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/tensorflow_core/python/keras/engine/training.py in fit(self, x, y, batch_size, epochs, verbose, callbacks, validation_split, validation_data, shuffle, class_weight, sample_weight, initial_epoch, steps_per_epoch, validation_steps, validation_freq, max_queue_size, workers, use_multiprocessing, **kwargs)
+       732         max_queue_size=max_queue_size,
+       733         workers=workers,
+   --> 734         use_multiprocessing=use_multiprocessing)
+       735 
+       736   def evaluate(self,
+
+   ~/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/tensorflow_core/python/keras/engine/training_v2.py in fit(self, model, x, y, batch_size, epochs, verbose, callbacks, validation_split, validation_data, shuffle, class_weight, sample_weight, initial_epoch, steps_per_epoch, validation_steps, validation_freq, **kwargs)
+       222           validation_data=validation_data,
+       223           validation_steps=validation_steps,
+   --> 224           distribution_strategy=strategy)
+       225 
+       226       total_samples = _get_total_number_of_samples(training_data_adapter)
+
+   ~/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/tensorflow_core/python/keras/engine/training_v2.py in _process_training_inputs(model, x, y, batch_size, epochs, sample_weights, class_weights, steps_per_epoch, validation_split, validation_data, validation_steps, shuffle, distribution_strategy, max_queue_size, workers, use_multiprocessing)
+       545         max_queue_size=max_queue_size,
+       546         workers=workers,
+   --> 547         use_multiprocessing=use_multiprocessing)
+       548     val_adapter = None
+       549     if validation_data:
+
+   ~/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/tensorflow_core/python/keras/engine/training_v2.py in _process_inputs(model, x, y, batch_size, epochs, sample_weights, class_weights, shuffle, steps, distribution_strategy, max_queue_size, workers, use_multiprocessing)
+       607   # _standardize_user_data, use the _prepare_model_with_inputs.
+       608   if adapter_cls not in _ADAPTER_FOR_STANDARDIZE_USER_DATA:
+   --> 609     training_v2_utils._prepare_model_with_inputs(model, adapter.get_dataset())
+       610   return adapter
+       611 
+
+   ~/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/tensorflow_core/python/keras/engine/training_v2_utils.py in _prepare_model_with_inputs(model, dataset)
+       185     inputs, target, _ = model._build_model_with_inputs(dataset, targets=None)
+       186   else:
+   --> 187     inputs, target, _ = _get_input_from_iterator(iter(dataset))
+       188 
+       189   if not model._is_compiled and model.optimizer:
+
+   ~/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/tensorflow_core/python/keras/engine/training_v2_utils.py in _get_input_from_iterator(iterator)
+       130 def _get_input_from_iterator(iterator):
+       131   """Get elements from the iterator and verify the input shape and type."""
+   --> 132   next_element = next(iterator)
+       133 
+       134   if (tensor_util.is_tensor(next_element) or
+
+   ~/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/tensorflow_core/python/data/ops/iterator_ops.py in __next__(self)
+       620 
+       621   def __next__(self):  # For Python 3 compatibility
+   --> 622     return self.next()
+       623 
+       624   def _next_internal(self):
+
+   ~/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/tensorflow_core/python/data/ops/iterator_ops.py in next(self)
+       664     """Returns a nested structure of `Tensor`s containing the next element."""
+       665     try:
+   --> 666       return self._next_internal()
+       667     except errors.OutOfRangeError:
+       668       raise StopIteration
+
+   ~/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/tensorflow_core/python/data/ops/iterator_ops.py in _next_internal(self)
+       649             self._iterator_resource,
+       650             output_types=self._flat_output_types,
+   --> 651             output_shapes=self._flat_output_shapes)
+       652 
+       653       try:
+
+   ~/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/tensorflow_core/python/ops/gen_dataset_ops.py in iterator_get_next_sync(iterator, output_types, output_shapes, name)
+      2671       else:
+      2672         message = e.message
+   -> 2673       _six.raise_from(_core._status_to_exception(e.code, message), None)
+      2674   # Add nodes to the TensorFlow graph.
+      2675   if not isinstance(output_types, (list, tuple)):
+
+   ~/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/six.py in raise_from(value, from_value)
+
+   InvalidArgumentError: ValueError: `generator` yielded an element of shape (22, 224, 224, 3) where an element of shape (32, 224, 224, 3) was expected.
+   Traceback (most recent call last):
+
+     File "/home/meguru/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/tensorflow_core/python/ops/script_ops.py", line 221, in __call__
+       ret = func(*args)
+
+     File "/home/meguru/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/tensorflow_core/python/data/ops/dataset_ops.py", line 621, in generator_py_func
+       "of shape %s was expected." % (ret_array.shape, expected_shape))
+
+   ValueError: `generator` yielded an element of shape (22, 224, 224, 3) where an element of shape (32, 224, 224, 3) was expected.
+
+
+      [[{{node PyFunc}}]] [Op:IteratorGetNextSync]
+   :end:

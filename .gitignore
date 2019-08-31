@@ -24,3 +24,4 @@ tutorials/basic/training_2/
 *.tfrecords
 *.tfrecord
 /tutorials/dataPreprocessing/Untitled.ipynb
+/tutorials/images/Untitled.ipynb
