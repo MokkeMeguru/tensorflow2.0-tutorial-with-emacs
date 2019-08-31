@@ -1,0 +1,516 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: TensorFlow Hub with Keras
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      from tensorflow.keras.models import Sequential
+      from tensorflow.keras.layers import Dense, Conv2D, Flatten, Dropout, MaxPooling2D
+      from tensorflow.keras.preprocessing.image import ImageDataGenerator
+      # import tensorflow_text as text
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      import pathlib
+      import random
+      # import IPython.display as display
+      import PIL.Image as Image
+      import urllib3
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+          # '{:25}: {}'.format("tensorflow\'s version", hub.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+      urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+
+
+* データの前処理
+** データのダウンロード
+   #+NAME: 1b78e622-4345-4f23-a744-9270ee52f153
+   #+BEGIN_SRC ein-python :session localhost :results none
+     SPLIT_WEIGHTS = (8, 1, 1)
+     splits = tfds.Split.TRAIN.subsplit(weighted=SPLIT_WEIGHTS)
+
+     (raw_train, raw_validation, raw_test), metadata = tfds.load('cats_vs_dogs',
+                                                                 split=list(splits),
+                                                               with_info=True,
+                                                                 as_supervised=True)
+   #+END_SRC
+
+   #+RESULTS: 1b78e622-4345-4f23-a744-9270ee52f153
+
+   #+NAME: 5c4e17e4-a1fa-4016-beaf-7e4c0cddebee
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     print_infos([
+           raw_train,
+           raw_validation,
+           raw_test
+       ])
+   #+END_SRC
+
+   #+RESULTS: 5c4e17e4-a1fa-4016-beaf-7e4c0cddebee
+   :results:
+   <_OptionsDataset shapes: ((None, None, 3), ()), types: (tf.uint8, tf.int64)>
+   <_OptionsDataset shapes: ((None, None, 3), ()), types: (tf.uint8, tf.int64)>
+   <_OptionsDataset shapes: ((None, None, 3), ()), types: (tf.uint8, tf.int64)>
+   :end:
+
+   #+NAME: 5dd8fbea-d1ca-41ea-8094-6f5bb595e49c
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     get_label_name = metadata.features['label'].int2str
+
+     for image, label in raw_train.take(2):
+       plt.figure()
+       plt.imshow(image)
+       plt.title(get_label_name(label))
+   #+END_SRC
+
+   #+RESULTS: 5dd8fbea-d1ca-41ea-8094-6f5bb595e49c
+   :results:
+   [[file:ein-images/ob-ein-0c9c06b7a4542dc929f7fb4f5effffac.png]]
+   [[file:ein-images/ob-ein-4b5026936fa3c0e6b1fe6940d7b1c878.png]]
+   :end:
+
+** データの整形
+#+NAME: 8a7ca681-42d8-4874-ba96-b3543e72c175
+#+BEGIN_SRC ein-python :session localhost :results raw drawer  :exports both
+  IMG_SIZE = 160  # All images will be resized to 160x160
+
+
+  def format_example(image, label):
+      image = tf.cast(image, tf.float32)
+      image = (image / 127.5) - 1
+      image = tf.image.resize(image, (IMG_SIZE, IMG_SIZE))
+      return image, label
+
+
+  train = raw_train.map(format_example)
+  validation = raw_validation.map(format_example)
+  test = raw_test.map(format_example)
+
+  BATCH_SIZE = 32
+  SHUFFLE_BUFFER_SIZE = 1000
+
+  train_batches = train.shuffle(SHUFFLE_BUFFER_SIZE).batch(BATCH_SIZE)
+  validation_batches = validation.batch(BATCH_SIZE)
+  test_batches = test.batch(BATCH_SIZE)
+
+  print_infos ([
+      'raw_train',
+      raw_train.__class__,
+      'train',
+      train.__class__
+  ])
+
+  for image_batch, label_batch in train_batches.take(1):
+      print(image_batch.shape)
+#+END_SRC
+
+#+RESULTS: 8a7ca681-42d8-4874-ba96-b3543e72c175
+:results:
+raw_train
+<class 'tensorflow.python.data.ops.dataset_ops._OptionsDataset'>
+train
+<class 'tensorflow.python.data.ops.dataset_ops.MapDataset'>
+
+(32, 160, 160, 3)
+:end:
+
+* 事前訓練済み convnets を元にしたモデル作成
+#+NAME: e24e7f96-9819-4d5b-bd9b-dbfab0a4eec7
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  IMG_SHAPE = (IMG_SIZE, IMG_SIZE, 3)
+
+  # Create the base model from the pre-trained model MobileNet V2
+  base_model = tf.keras.applications.MobileNetV2(input_shape=IMG_SHAPE,
+                                                 include_top=False,
+                                                 weights='imagenet')
+
+  feature_batch = base_model(image_batch)
+  print(feature_batch.shape)
+#+END_SRC
+
+#+RESULTS: e24e7f96-9819-4d5b-bd9b-dbfab0a4eec7
+:results:
+(32, 5, 5, 1280)
+:end:
+
+* 特徴量抽出
+** convnet の freeze
+#+NAME: f02b8272-6a73-49fd-8b2b-d31170e4ad55
+#+BEGIN_SRC ein-python :session localhost :results raw drawer 
+  base_model.trainable = False
+
+  # base_model.summary()
+#+END_SRC
+
+#+RESULTS: f02b8272-6a73-49fd-8b2b-d31170e4ad55
+:results:
+:end:
+
+** classification layer の追加
+#+NAME: 40f44552-c159-4992-9cae-e8cad9c37ab7
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  global_average_layer = layers.GlobalAveragePooling2D()
+  feature_batch_average = global_average_layer(feature_batch)
+  print(feature_batch_average.shape)
+#+END_SRC
+
+#+RESULTS: 40f44552-c159-4992-9cae-e8cad9c37ab7
+:results:
+(32, 1280)
+:end:
+
+
+#+NAME: 0911e3d0-7e67-415e-ae81-c9053a7b19d4
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both 
+  prediction_layer = layers.Dense(1)
+  prediction_batch = prediction_layer(feature_batch_average)
+  print(prediction_batch.shape)
+#+END_SRC
+
+#+RESULTS: 0911e3d0-7e67-415e-ae81-c9053a7b19d4
+:results:
+(32, 1)
+:end:
+
+モデルの組み合わせ
+#+NAME: a104a2c9-73ed-44f5-bfeb-d66b7a67ce22
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  model = Sequential([base_model, global_average_layer, prediction_layer])
+  model.summary()
+#+END_SRC
+
+#+RESULTS: a104a2c9-73ed-44f5-bfeb-d66b7a67ce22
+:results:
+Model: "sequential"
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+mobilenetv2_1.00_160 (Model) (None, 5, 5, 1280)        2257984   
+_________________________________________________________________
+global_average_pooling2d (Gl (None, 1280)              0         
+_________________________________________________________________
+dense (Dense)                (None, 1)                 1281      
+=================================================================
+Total params: 2,259,265
+Trainable params: 1,281
+Non-trainable params: 2,257,984
+_________________________________________________________________
+:end:
+
+** モデルのコンパイル
+#+NAME: b562ef1a-2a58-435c-9357-43bcf2bc20d2
+#+BEGIN_SRC ein-python :session localhost :results raw drawer
+  base_learning_rate = 0.0001
+  model.compile(optimizer=tf.keras.optimizers.RMSprop(lr=base_learning_rate),
+                loss='binary_crossentropy',
+                metrics=['accuracy']
+  )
+#+END_SRC
+
+#+RESULTS: b562ef1a-2a58-435c-9357-43bcf2bc20d2
+:results:
+:end:
+
+** モデルの訓練
+#+NAME: ffbf22f1-f879-4ee2-8c10-69e9cd968a1e
+#+BEGIN_SRC ein-python :session localhost :results raw drawer
+  num_train, num_val, num_test = (metadata.splits['train'].num_examples *
+                                  weight / 10 for weight in SPLIT_WEIGHTS)
+#+END_SRC
+
+#+RESULTS: ffbf22f1-f879-4ee2-8c10-69e9cd968a1e
+:results:
+:end:
+
+
+#+NAME: 1450902d-e674-4c9f-bc40-b18106c970a3
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  metadata
+#+END_SRC
+
+#+RESULTS: 1450902d-e674-4c9f-bc40-b18106c970a3
+:results:
+tfds.core.DatasetInfo(
+    name='cats_vs_dogs',
+    version=2.0.1,
+    description='A large set of images of cats and dogs.There are 1738 corrupted images that are dropped.',
+    urls=['https://www.microsoft.com/en-us/download/details.aspx?id=54765'],
+    features=FeaturesDict({
+        'image': Image(shape=(None, None, 3), dtype=tf.uint8),
+        'image/filename': Text(shape=(), dtype=tf.string),
+        'label': ClassLabel(shape=(), dtype=tf.int64, num_classes=2),
+    }),
+    total_num_examples=23262,
+    splits={
+        'train': 23262,
+    },
+    supervised_keys=('image', 'label'),
+    citation="""@Inproceedings (Conference){asirra-a-captcha-that-exploits-interest-aligned-manual-image-categorization,
+    author = {Elson, Jeremy and Douceur, John (JD) and Howell, Jon and Saul, Jared},
+    title = {Asirra: A CAPTCHA that Exploits Interest-Aligned Manual Image Categorization},
+    booktitle = {Proceedings of 14th ACM Conference on Computer and Communications Security (CCS)},
+    year = {2007},
+    month = {October},
+    publisher = {Association for Computing Machinery, Inc.},
+    url = {https://www.microsoft.com/en-us/research/publication/asirra-a-captcha-that-exploits-interest-aligned-manual-image-categorization/},
+    edition = {Proceedings of 14th ACM Conference on Computer and Communications Security (CCS)},
+    }""",
+    redistribution_info=,
+)
+:end:
+
+#+NAME: a061ab0d-3c67-4afa-8296-54b9055f7280
+#+BEGIN_SRC ein-python :session localhost :results none1
+  initial_epochs = 10
+  steps_per_epoch = round(num_train) // BATCH_SIZE
+  validation_steps = 20
+
+  loss0, accuracy0 = model.evaluate(validation_batches, steps=validation_steps)
+#+END_SRC
+
+#+RESULTS: a061ab0d-3c67-4afa-8296-54b9055f7280
+
+#+NAME: 0bbea698-6019-4bc9-b01c-6137c3c03605
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  print_infos([
+      'initial loss: {:.2f}'.format(loss0),
+      'initial acc: {:.2f}'.format(accuracy0)
+  ])
+#+END_SRC
+
+#+RESULTS: 0bbea698-6019-4bc9-b01c-6137c3c03605
+:results:
+initial loss: 5.56
+initial acc: 0.47
+:end:
+
+#+NAME: f60fed22-a409-4262-8c47-556b0a5190d9
+#+BEGIN_SRC ein-python :session localhost :results none
+  history = model.fit(train_batches,
+                      epochs=initial_epochs,
+                      validation_data=validation_batches)
+#+END_SRC
+
+#+RESULTS: f60fed22-a409-4262-8c47-556b0a5190d9
+Epoch 10/10
+582/582 [==============================] - 174s 299ms/step - loss: 0.4476 - accuracy: 0.9399 - val_loss: 0.4093 - val_accuracy: 0.9560
+
+** 学習曲線
+#+NAME: b854c6e5-7848-47c5-b917-a90d51d97714
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  acc = history.history['accuracy']
+  val_acc = history.history['val_accuracy']
+
+  loss = history.history['loss']
+  val_loss = history.history['val_loss']
+
+  plt.figure(figsize=(8, 8))
+  plt.subplot(2, 1, 1)
+  plt.plot(acc, label='Training Accuracy')
+  plt.plot(val_acc, label='Validation Accuracy')
+  plt.legend(loc='lower right')
+  plt.ylabel('Accuracy')
+  plt.ylim([min(plt.ylim()), 1])
+  plt.title('Training and Validation Accuracy')
+
+  plt.subplot(2, 1, 2)
+  plt.plot(loss, label='Training Loss')
+  plt.plot(val_loss, label='Validation Loss')
+  plt.legend(loc='upper right')
+  plt.ylabel('Cross Entropy')
+  plt.ylim([0, 1.0])
+  plt.title('Training and Validation Loss')
+  plt.xlabel('epoch')
+  plt.show()
+#+END_SRC
+
+#+RESULTS: b854c6e5-7848-47c5-b917-a90d51d97714
+:results:
+[[file:ein-images/ob-ein-79fd47a337a4120212f729b450188f0c.png]]
+:end:
+
+* Fine tuning
+** 事前学習モデルの解凍
+#+NAME: 22cc2bb9-16e0-4f91-996d-892090474066
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  base_model.trainable = True
+
+  # Let's take a look to see how many layers are in the base model
+  print("Number of layers in the base model: ", len(base_model.layers))
+
+  # Fine tune from this layer onwards
+  fine_tune_at = 100
+
+  # Freeze all the layers before the `fine_tune_at` layer
+  for layer in base_model.layers[:fine_tune_at]:
+      layer.trainable = False
+#+END_SRC
+
+#+RESULTS: 22cc2bb9-16e0-4f91-996d-892090474066
+:results:
+Number of layers in the base model:  155
+:end:
+
+** モデルのコンパイル
+#+NAME: a97797df-861b-4eec-935e-d70031fe4353
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  model.compile(loss='binary_crossentropy',
+                optimizer=tf.keras.optimizers.RMSprop(lr=base_learning_rate /
+                                                      10),
+                metrics=['accuracy'])
+
+  model.summary()
+#+END_SRC
+
+#+RESULTS: a97797df-861b-4eec-935e-d70031fe4353
+:results:
+Model: "sequential"
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+mobilenetv2_1.00_160 (Model) (None, 5, 5, 1280)        2257984   
+_________________________________________________________________
+global_average_pooling2d (Gl (None, 1280)              0         
+_________________________________________________________________
+dense (Dense)                (None, 1)                 1281      
+=================================================================
+Total params: 2,259,265
+Trainable params: 1,863,873
+Non-trainable params: 395,392
+_________________________________________________________________
+:end:
+
+#+NAME: 6117bb73-3962-4c4e-8a1e-d1eaefb51766
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+len(model.trainable_variables)
+#+END_SRC
+
+#+RESULTS: 6117bb73-3962-4c4e-8a1e-d1eaefb51766
+:results:
+58
+:end:
+** 学習の継続
+以前訓練したそれに *加えて* 訓練を行います。
+#+NAME: 0ac8da6d-ba39-4490-b4f4-2477d9f71ce1
+#+BEGIN_SRC ein-python :session localhost :results none
+  fine_tune_epochs = 10
+  total_epochs = initial_epochs + fine_tune_epochs
+
+  history_fine = model.fit(train_batches,
+                           epochs=total_epochs,
+                           initial_epoch=initial_epochs,
+                           validation_data=validation_batches)
+#+END_SRC
+
+#+RESULTS: 0ac8da6d-ba39-4490-b4f4-2477d9f71ce1
+
+Epoch 20/20
+582/582 [==============================] - 250s 430ms/step - loss: 0.1204 - accuracy: 0.9850 - val_loss: 0.1897 - val_accuracy: 0.9746
+
+トレーニングのスコアの遷移
+#+NAME: 347a5f66-8288-4b99-a96f-e0f319d41ce1
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  acc += history_fine.history['accuracy']
+  val_acc += history_fine.history['val_accuracy']
+
+  loss += history_fine.history['loss']
+  val_loss += history_fine.history['val_loss']
+
+  plt.figure(figsize=(8, 8))
+  plt.subplot(2, 1, 1)
+  plt.plot(acc, label='Training Accuracy')
+  plt.plot(val_acc, label='Validation Accuracy')
+  plt.ylim([0.8, 1])
+  plt.plot([initial_epochs-1,initial_epochs-1],
+            plt.ylim(), label='Start Fine Tuning')
+  plt.legend(loc='lower right')
+  plt.title('Training and Validation Accuracy')
+
+  plt.subplot(2, 1, 2)
+  plt.plot(loss, label='Training Loss')
+  plt.plot(val_loss, label='Validation Loss')
+  plt.ylim([0, 1.0])
+  plt.plot([initial_epochs-1,initial_epochs-1],
+           plt.ylim(), label='Start Fine Tuning')
+  plt.legend(loc='upper right')
+  plt.title('Training and Validation Loss')
+  plt.xlabel('epoch')
+  plt.show()
+#+END_SRC
+
+#+RESULTS: 347a5f66-8288-4b99-a96f-e0f319d41ce1
+:results:
+[[file:ein-images/ob-ein-da1012c1765128fd7555e2b66823ffa6.png]]
+:end:
+* Summary
+Using a pre-trained model for feature extraction: When working with a small dataset, it is common to take advantage of features learned by a model trained on a larger dataset in the same domain. This is done by instantiating the pre-trained model and adding a fully-connected classifier on top. The pre-trained model is "frozen" and only the weights of the classifier get updated during training. In this case, the convolutional base extracted all the features associated with each image and you just trained a classifier that determines the image class given that set of extracted features.
+
+Fine-tuning a pre-trained model: To further improve performance, one might want to repurpose the top-level layers of the pre-trained models to the new dataset via fine-tuning. In this case, you tuned your weights such that your model learned high-level features specific to the dataset. This technique is usually recommended when the training dataset is large and very similar to the original dataset that the pre-trained model was trained on.
+
+
