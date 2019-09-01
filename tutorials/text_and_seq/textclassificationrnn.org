@@ -1,0 +1,370 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: Text Classification with RNN
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+      # from tensorflow_examples.models.pix2pix import pix2pix
+
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      from tensorflow.keras.models import Sequential
+      from tensorflow.keras.layers import Dense, Conv2D, Flatten, Dropout, MaxPooling2D
+      from tensorflow.keras.preprocessing.image import ImageDataGenerator
+      # import tensorflow_text as text
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      import pathlib
+      import random
+      # import IPython.display as display
+      # from IPython.display import clear_output
+      # import PIL.Image as Image
+      import urllib3
+      import io
+
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+          # '{:25}: {}'.format("tensorflow\'s version", hub.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+      urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+  
+  #+NAME: f160f13c-b8f5-4cb7-9350-eb7947c92fa9
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    import matplotlib.pyplot as plt
+
+
+    def plot_graphs(history, string):
+        plt.plot(history.history[string])
+        plt.plot(history.history['val_' + string])
+        plt.xlabel("Epochs")
+        plt.ylabel(string)
+        plt.legend([string, 'val_' + string])
+        plt.show()
+  #+END_SRC
+
+  #+RESULTS: f160f13c-b8f5-4cb7-9350-eb7947c92fa9
+  :results:
+  :end:
+
+* 入力パイプラインの設計
+#+NAME: 010b2e03-654f-4fad-9188-2f9ab791cd92
+#+BEGIN_SRC ein-python :session localhost :results none
+  dataset, info = tfds.load('imdb_reviews/subwords8k',
+                            with_info=True,
+                            as_supervised=True)
+  train_dataset, test_dataset = dataset['train'], dataset['test']
+#+END_SRC
+
+#+RESULTS: 010b2e03-654f-4fad-9188-2f9ab791cd92
+
+#+NAME: 17b69f47-2c65-4d96-9c62-b436d6c6a5cc
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  tokenizer = info.features['text'].encoder
+
+
+  sample_string = 'TensorFlow is cool.'
+  tokenized_string = tokenizer.encode(sample_string)
+  original_string = tokenizer.decode(tokenized_string)
+  assert original_string == sample_string
+
+
+  print_infos([
+      'Vocabulary size: {}'.format(tokenizer.vocab_size),
+      'Tokenized string is {}'.format(tokenized_string),
+      'The original string: {}'.format(original_string)
+  ])
+#+END_SRC
+
+#+RESULTS: 17b69f47-2c65-4d96-9c62-b436d6c6a5cc
+:results:
+Vocabulary size: 8185
+Tokenized string is [6307, 2327, 4043, 4265, 9, 2724, 7975]
+The original string: TensorFlow is cool.
+:end:
+
+The tokenizer encodes the string by breaking it into subwords if the word is not in its dictionary.
+#+NAME: 45778c52-132e-403f-ba0c-528d20aa7ff4
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  for ts in tokenized_string:
+      print('{} ----> {}'.format(ts, tokenizer.decode([ts])))
+#+END_SRC
+
+#+RESULTS: 45778c52-132e-403f-ba0c-528d20aa7ff4
+:results:
+6307 ----> Ten
+2327 ----> sor
+4043 ----> Fl
+4265 ----> ow 
+9 ----> is 
+2724 ----> cool
+7975 ----> .
+:end:
+
+データセットの作成
+#+NAME: dea27be6-48d2-4bf4-b0ab-da3a22230e42
+#+BEGIN_SRC ein-python :session localhost :results raw drawer
+  BUFFER_SIZE = 10000
+  BATCH_SIZE = 64
+
+  train_dataset = train_dataset.shuffle(BUFFER_SIZE)
+  train_dataset = train_dataset.padded_batch(BATCH_SIZE,
+                                             train_dataset.output_shapes)
+
+  test_dataset = test_dataset.padded_batch(BATCH_SIZE,
+                                           test_dataset.output_shapes)
+#+END_SRC
+
+#+RESULTS: dea27be6-48d2-4bf4-b0ab-da3a22230e42
+:results:
+:end:
+
+* モデルの作成
+#+NAME: a7188388-04cc-48a7-ac81-a9b943541f2a
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  model = Sequential([
+      layers.Embedding(tokenizer.vocab_size, 64),
+      layers.Bidirectional(layers.LSTM(64)),
+      layers.Dense(64, activation='relu'),
+      layers.Dense(1, activation='sigmoid')
+  ])
+
+  model.compile(loss='binary_crossentropy',
+                optimizer='adam',
+                metrics=['accuracy'])
+
+  model.summary()
+#+END_SRC
+
+#+RESULTS: a7188388-04cc-48a7-ac81-a9b943541f2a
+:results:
+Model: "sequential_16"
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+embedding_8 (Embedding)      (None, None, 64)          523840    
+_________________________________________________________________
+bidirectional_2 (Bidirection (None, 128)               66048     
+_________________________________________________________________
+dense_15 (Dense)             (None, 64)                8256      
+_________________________________________________________________
+dense_16 (Dense)             (None, 1)                 65        
+=================================================================
+Total params: 598,209
+Trainable params: 598,209
+Non-trainable params: 0
+_________________________________________________________________
+:end:
+
+#+NAME: 79946711-6363-4ada-970b-9ea34700a4a2
+#+BEGIN_SRC ein-python :session localhost :results none
+  history = model.fit(train_dataset, epochs=10, validation_data=test_dataset)
+#+END_SRC
+
+#+RESULTS: 79946711-6363-4ada-970b-9ea34700a4a2
+Epoch 10/10
+391/391 [==============================] - 226s 577ms/step - loss: 0.0994 - accuracy: 0.9674 - val_loss: 0.6610 - val_accuracy: 0.8074
+
+#+NAME: 6c1eb89a-e506-48fa-949b-e02577febb3d
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  plot_graphs(history, 'accuracy')
+#+END_SRC
+
+#+RESULTS: 6c1eb89a-e506-48fa-949b-e02577febb3d
+:results:
+[[file:ein-images/ob-ein-37d601f2868a0e405b13e2892b338f31.png]]
+:end:
+
+
+#+NAME: 59e646ba-5c4b-4cb7-8c3a-d22c7135db3d
+#+BEGIN_SRC ein-python :session localhost :results raw drawer
+  plot_graphs(history, 'loss')
+#+END_SRC
+
+#+RESULTS: 59e646ba-5c4b-4cb7-8c3a-d22c7135db3d
+:results:
+[[file:ein-images/ob-ein-079b8edf53e7b8789594dbc427d3dc56.png]]
+:end:
+
+* LSTM を二層にする
+#+NAME: 97fdbf70-3aec-405d-b5b6-ff3fd743256a
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  model = Sequential([
+      layers.Embedding(tokenizer.vocab_size, 64),
+      layers.Bidirectional(layers.LSTM(64, return_sequences=True)),
+      layers.Bidirectional(layers.LSTM(32)),
+      layers.Dense(64, activation='relu'),
+      layers.Dense(1, activation='sigmoid')
+  ])
+
+  model.compile(loss='binary_crossentropy',
+                optimizer='adam',
+                metrics=['accuracy'])
+
+  model.summary()
+#+END_SRC
+
+#+RESULTS: 97fdbf70-3aec-405d-b5b6-ff3fd743256a
+:results:
+Model: "sequential"
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+embedding (Embedding)        (None, None, 64)          523840    
+_________________________________________________________________
+bidirectional (Bidirectional (None, None, 128)         66048     
+_________________________________________________________________
+bidirectional_1 (Bidirection (None, 64)                41216     
+_________________________________________________________________
+dense (Dense)                (None, 64)                4160      
+_________________________________________________________________
+dense_1 (Dense)              (None, 1)                 65        
+=================================================================
+Total params: 635,329
+Trainable params: 635,329
+Non-trainable params: 0
+_________________________________________________________________
+:end:
+
+#+NAME: 2def2dab-f6f4-4e6b-825b-fc7dd3419349
+#+BEGIN_SRC ein-python :session localhost :results none
+  history = model.fit(train_dataset, epochs=10, validation_data=test_dataset)
+#+END_SRC
+
+#+RESULTS: 2def2dab-f6f4-4e6b-825b-fc7dd3419349
+Epoch 10/10
+391/391 [==============================] - 457s 1s/step - loss: 0.0950 - accuracy: 0.9714 - val_loss: 0.4790 - val_accuracy: 0.8497
+
+#+NAME: 177d5e1e-bd07-43c7-ab0c-f74b76e55fa9
+#+BEGIN_SRC ein-python :session localhost :results none
+  test_loss, test_acc = model.evaluate(test_dataset)
+#+END_SRC
+
+#+NAME: b52f510f-524b-4485-9745-dbe6106944da
+#+RESULTS: 177d5e1e-bd07-43c7-ab0c-f74b76e55fa9
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  print_infos(
+      ['Test Loss: {}'.format(test_loss), 'Test Accuracy: {}'.format(test_acc)])
+#+END_SRC
+
+#+RESULTS: b52f510f-524b-4485-9745-dbe6106944da
+:results:
+Test Loss: 0.4790480720341358
+Test Accuracy: 0.8496800065040588
+:end:
+
+* Predict
+#+NAME: f05a2fdb-aede-4a51-a50a-b50d061fcbe0
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports botth
+  def pad_to_size(vec, size):
+      zeros = [0] * (size - len(vec))
+      vec.extend(zeros)
+      return vec
+
+
+  def sample_predict(sentence, pad):
+      tokenized_sample_pred_text = tokenizer.encode(sample_pred_text)
+      if pad:
+          tokenized_sample_pred_text = pad_to_size(tokenized_sample_pred_text,
+                                                   BATCH_SIZE)
+      predictions = model.predict(tf.expand_dims(tokenized_sample_pred_text, 0))
+      return (predictions)
+
+
+  # predict on a sample text with padding
+
+  sample_pred_text = ('The movie was cool. The animation and the graphics '
+                      'were out of this world. I would recommend this movie.')
+  predictions = sample_predict(sample_pred_text, pad=True)
+  print(predictions)
+
+  # predict on a sample text with padding
+
+  sample_pred_text = ('The movie was not good. The animation and the graphics '
+                      'were terrible. I would not recommend this movie.')
+  predictions = sample_predict(sample_pred_text, pad=True)
+  print (predictions)
+#+END_SRC
+
+#+RESULTS: f05a2fdb-aede-4a51-a50a-b50d061fcbe0
+:results:
+[[0.6907909]]
+[[0.0039187]]
+:end:
+
+* 訓練ログの視覚化
+#+NAME: e923b442-54e5-4aac-9c58-640665a8ff04
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  plot_graphs(history, 'accuracy')
+  plot_graphs(history, 'loss')
+#+END_SRC
+
+#+RESULTS: e923b442-54e5-4aac-9c58-640665a8ff04
+:results:
+[[file:ein-images/ob-ein-6eb9ab8cab66a78a654021e20800712d.png]]
+[[file:ein-images/ob-ein-e57027703298f1be719315ec1fed2c26.png]]
+:end:
+
+
