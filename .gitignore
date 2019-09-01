@@ -27,7 +27,7 @@ tutorials/basic/training_2/
 /tutorials/images/Untitled.ipynb
 *.tsv
 tutorials/begginers/basic/training_1
-/tutorials/begginers/basic/training_2/checkpoint
+tutorials/begginers/basic/training_2
 /tutorials/begginers/dataPreprocessing/Untitled.ipynb
 /tutorials/begginers/dataPreprocessing/images.tfrec
-/tutorials/begginers/basic/training_2/cp-0000.ckpt.data-00000-of-00002
+
