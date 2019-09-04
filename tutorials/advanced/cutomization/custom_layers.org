@@ -1,0 +1,315 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: Tensors and Operations
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+      # from tensorflow_examples.models.pix2pix import pix2pix
+
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      from tensorflow.keras.models import Sequential
+      # import tensorflow_text as text
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      # import pathlib
+      # import random
+      # import IPython.display as display
+      # from IPython.display import clear_output
+      # import PIL.Image as Image
+      # import urllib3
+      # import io
+      import tempfile
+      from pprint import pprint
+
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      def pprint_infos(infolist: list):
+          for info in infolist:
+              pprint(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+          # '{:25}: {}'.format("tensorflow\'s version", hub.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+      # urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+
+* Layers: common sets of useful operations
+  #+NAME: 13bbc3a6-1862-4c86-9bf3-76d67d245dec
+  #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+    # In the tf.keras.layers package, layers are objects. To construct a layer,
+    # simply construct the object. Most layers take as a first argument the number
+    # of output dimensions / channels.
+
+    layer = layers.Dense(100)
+
+    # The number of input dimensions is often unnecessary, as it can be inferred
+    # the first time the layer is used, but it can be provided if you want to
+    # specify it manually, which is useful in some complex models.
+    layer = layers.Dense(10, input_shape=(None, 5))
+  #+END_SRC
+
+  #+RESULTS: 13bbc3a6-1862-4c86-9bf3-76d67d245dec
+
+  Eager Excecution の例
+  #+NAME: c95ee4d2-e61f-47c4-9aee-03f8ec52acaf
+  #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+    layer(tf.zeros([10, 5]))
+  #+END_SRC
+
+  #+RESULTS: c95ee4d2-e61f-47c4-9aee-03f8ec52acaf
+  #+begin_example
+  <tf.Tensor: id=850, shape=(10, 10), dtype=float32, numpy=
+  array([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+         [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+         [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+         [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+         [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+         [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+         [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+         [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+         [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+         [0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]], dtype=float32)>
+  #+end_example
+
+  #+NAME: 2654ac83-aa3e-441f-9a43-293fc3445de7
+  #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+    # [BATCH_SIZE x VEC_DIM] x [VEC_DIM x OUTPUT_DIM] = [BARCH_SIZE x OUTPUT_DIM]
+    # BATCH_SIZE = 10
+    # VEC_DIM =  5
+    # OUTPUT_DIM = 10
+    layer.variables
+  #+END_SRC
+
+  #+RESULTS: 2654ac83-aa3e-441f-9a43-293fc3445de7
+  #+begin_example
+  [<tf.Variable 'dense_5/kernel:0' shape=(5, 10) dtype=float32, numpy=
+   array([[ 0.05862457, -0.20039788,  0.5410165 , -0.27830037,  0.6219527 ,
+           -0.44123346, -0.0694648 , -0.22958553, -0.4034623 , -0.20658687],
+          [-0.20007098,  0.2762403 , -0.38813052,  0.35842884, -0.25116256,
+           -0.47747338,  0.27459335,  0.6181504 , -0.37451228,  0.05699903],
+          [-0.54361117,  0.08713394, -0.09227771, -0.44690722,  0.07673764,
+           -0.28604913,  0.29595476,  0.1971209 , -0.25677478,  0.07732153],
+          [ 0.10597187, -0.19477192,  0.01850301, -0.54247916,  0.29731506,
+           -0.35327274, -0.25034106, -0.24670011,  0.5671435 , -0.4127467 ],
+          [-0.05765873, -0.32934415,  0.5379463 , -0.02448803, -0.3198624 ,
+            0.20365268, -0.11815792,  0.6171152 , -0.13372478,  0.56502026]],
+         dtype=float32)>,
+   <tf.Variable 'dense_5/bias:0' shape=(10,) dtype=float32, numpy=array([0., 0., 0., 0., 0., 0., 0., 0., 0., 0.], dtype=float32)>]
+  #+end_example
+* Implementing custom layers
+  #+NAME: 351fe580-e959-4561-a24d-4a611425872a
+  #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+    class MyDenseLayer(layers.Layer):
+        def __init__(self, num_outputs):
+            "docstring"
+            super(MyDenseLayer, self).__init__()
+            self.num_outputs = num_outputs
+
+        def build(self, input_shape):
+            self.kernel = self.add_variable(
+                'kernel', shape=[int(input_shape[-1]), self.num_outputs])
+        def call(self, input):
+            return tf.matmul(input, self.kernel)
+
+    layer = MyDenseLayer(10)
+    print_infos([
+        'example input:',
+        layer(tf.zeros([10, 5])),
+        '\nvariables:',
+        layer.trainable_variables
+    ])
+  #+END_SRC
+
+  #+RESULTS: 351fe580-e959-4561-a24d-4a611425872a
+  #+begin_example
+  example input:
+  tf.Tensor(
+  [[0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+   [0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+   [0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+   [0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+   [0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+   [0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+   [0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+   [0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+   [0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+   [0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]], shape=(10, 10), dtype=float32)
+
+  variables:
+  [<tf.Variable 'my_dense_layer_3/kernel:0' shape=(5, 10) dtype=float32, numpy=
+  array([[-0.10285795,  0.2828954 ,  0.51884085,  0.11371249, -0.54398364,
+           0.425824  , -0.41904002, -0.03335696, -0.03436482,  0.3725471 ],
+         [-0.42280945, -0.5390851 ,  0.082515  , -0.47284582,  0.33489424,
+          -0.216806  , -0.5552278 ,  0.5094153 , -0.17067161,  0.36275136],
+         [ 0.47486764,  0.36950463,  0.39504033, -0.39463842, -0.5300379 ,
+          -0.5295418 , -0.00894135,  0.30666095, -0.42790326, -0.10694778],
+         [ 0.2428574 ,  0.5989855 , -0.01387107,  0.43997437,  0.5530744 ,
+          -0.3619238 , -0.5293349 ,  0.54016286,  0.627279  , -0.21378025],
+         [ 0.58750075,  0.41878897,  0.44032186,  0.5703353 , -0.01054651,
+          -0.21909061,  0.5596635 , -0.17516541,  0.45780033,  0.45822257]],
+        dtype=float32)>]
+  #+end_example
+* Models: Layer を構成する
+  #+NAME: 7440ebe6-fab8-44fd-9f73-afaaf09e64e4
+  #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+    class ResnetIdentityBlock(keras.Model):
+        def __init__(self, kernel_size, filters):
+            "docstring"
+            super(ResnetIdentityBlock, self).__init__(name='')
+            filters1, filters2, filters3 = filters
+            self.conv2a = layers.Conv2D(filters1, (1, 1))
+            self.bn2a = layers.BatchNormalization()
+
+            self.conv2b = layers.Conv2D(filters2, kernel_size, padding='same')
+            self.bn2b = layers.BatchNormalization()
+
+            self.conv2c = layers.Conv2D(filters3, (1, 1))
+            self.bn2c = layers.BatchNormalization()
+
+        def call(self, input_tensor, training=False):
+            x = self.conv2a(input_tensor)
+            x = self.bn2a(x, training=training)
+            x = tf.nn.relu(x)
+
+            x = self.conv2b(x)
+            x = self.bn2b(x, training=training)
+            x = tf.nn.relu(x)
+
+            x = self.conv2c(x)
+            x = self.bn2c(x, training=training)
+
+            x += input_tensor
+            return tf.nn.relu(x)
+
+
+    block = ResnetIdentityBlock(1, [1, 2, 3])
+    pprint_infos([
+        block(tf.zeros([1, 2, 3, 3])), [x.name for x in block.trainable_variables]
+    ])
+  #+END_SRC
+
+  #+RESULTS: 7440ebe6-fab8-44fd-9f73-afaaf09e64e4
+  #+begin_example
+  <tf.Tensor: id=3074, shape=(1, 2, 3, 3), dtype=float32, numpy=
+  array([[[[0., 0., 0.],
+           [0., 0., 0.],
+           [0., 0., 0.]],
+
+          [[0., 0., 0.],
+           [0., 0., 0.],
+           [0., 0., 0.]]]], dtype=float32)>
+  ['resnet_identity_block_12/conv2d_27/kernel:0',
+   'resnet_identity_block_12/conv2d_27/bias:0',
+   'resnet_identity_block_12/batch_normalization_26/gamma:0',
+   'resnet_identity_block_12/batch_normalization_26/beta:0',
+   'resnet_identity_block_12/conv2d_28/kernel:0',
+   'resnet_identity_block_12/conv2d_28/bias:0',
+   'resnet_identity_block_12/batch_normalization_27/gamma:0',
+   'resnet_identity_block_12/batch_normalization_27/beta:0',
+   'resnet_identity_block_12/conv2d_29/kernel:0',
+   'resnet_identity_block_12/conv2d_29/bias:0',
+   'resnet_identity_block_12/batch_normalization_28/gamma:0',
+   'resnet_identity_block_12/batch_normalization_28/beta:0']
+  #+end_example
+
+
+#+NAME: 02c9506d-07a5-47c9-ab9d-c4d173e0d77b
+#+BEGIN_SRC ein-python :session localhost :results pp
+  my_seq = Sequential([
+      layers.Conv2D(1, (1, 1), input_shape=(None, None, 3)),
+      layers.BatchNormalization(),
+      layers.Conv2D(2, 1, padding='same'),
+      layers.BatchNormalization(),
+      layers.Conv2D(3, (1, 1)),
+      layers.BatchNormalization()
+  ])
+
+  my_seq.summary()
+#+END_SRC
+
+#+RESULTS: 02c9506d-07a5-47c9-ab9d-c4d173e0d77b
+#+begin_example
+Model: "sequential"
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+conv2d_30 (Conv2D)           (None, None, None, 1)     4         
+_________________________________________________________________
+batch_normalization_29 (Batc (None, None, None, 1)     4         
+_________________________________________________________________
+conv2d_31 (Conv2D)           (None, None, None, 2)     4         
+_________________________________________________________________
+batch_normalization_30 (Batc (None, None, None, 2)     8         
+_________________________________________________________________
+conv2d_32 (Conv2D)           (None, None, None, 3)     9         
+_________________________________________________________________
+batch_normalization_31 (Batc (None, None, None, 3)     12        
+=================================================================
+Total params: 41
+Trainable params: 29
+Non-trainable params: 12
+_________________________________________________________________
+#+end_example

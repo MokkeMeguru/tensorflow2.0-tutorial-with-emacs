@@ -1,0 +1,691 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: NMT with Attention
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+      import tensorflow_probability as tfp
+      # from tensorflow_examples.models.pix2pix import pix2pix
+
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      from tensorflow.keras.models import Sequential
+      # import tensorflow_text as text
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+      import matplotlib.ticker as ticker
+      
+      import pandas as pd
+      from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      import time
+      # import yaml
+      # import h5py
+      # import pathlib
+      # import random
+      # import IPython.display as display
+      # from IPython.display import clear_output
+      # import PIL.Image as Image
+      # import urllib3
+      import io
+      import tempfile
+      from pprint import pprint
+      
+      import unicodedata
+      import re
+      import time
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      def pprint_infos(infolist: list):
+          for info in infolist:
+              pprint(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+          # '{:25}: {}'.format("tensorflow\'s version", hub.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+      # urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+
+* Download preprocessed dataset
+  #+NAME: 66cd6e3a-b3e7-4532-9cc8-19517198b028
+  #+BEGIN_SRC ein-python :session localhost :results none
+    path_to_zip = keras.utils.get_file(
+        'spa_eng.zip',
+        origin=
+        'http://storage.googleapis.com/download.tensorflow.org/data/spa-eng.zip',
+        extract=True)
+
+    path_to_file = os.path.dirname(path_to_zip) + '/spa-eng/spa.txt'
+  #+END_SRC
+
+  #+RESULTS: 66cd6e3a-b3e7-4532-9cc8-19517198b028
+  
+  #+begin_src shell :exports both
+  head '/home/meguru/.keras/datasets/spa-eng/spa.txt'
+  #+end_src
+
+  #+RESULTS:
+  | Go.   | Ve.        |
+  | Go.   | Vete.      |
+  | Go.   | Vaya.      |
+  | Go.   | Váyase.    |
+  | Hi.   | Hola.      |
+  | Run!  | ¡Corre!    |
+  | Run.  | Corred.    |
+  | Who?  | ¿Quién?    |
+  | Fire! | ¡Fuego!    |
+  | Fire! | ¡Incendio! |
+
+  #+NAME: d3a32789-ac20-4be6-bab7-feb870e093a6
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    # Converts the unicode file to ascii
+    def unicode_to_ascii(s):
+        return ''.join(c for c in unicodedata.normalize('NFD', s)
+                       if unicodedata.category(c) != 'Mn')
+
+
+    def preprocess_sentence(w):
+        w = unicode_to_ascii(w.lower().strip())
+
+        # creating a space between a word and the punctuation following it
+        # eg: "he is a boy." => "he is a boy ."
+        # Reference:- https://stackoverflow.com/questions/3645931/python-padding-punctuation-with-white-spaces-keeping-punctuation
+        w = re.sub(r"([?.!,¿])", r" \1 ", w)
+        w = re.sub(r'[" "]+', " ", w)
+
+        # replacing everything with space except (a-z, A-Z, ".", "?", "!", ",")
+        w = re.sub(r"[^a-zA-Z?.!,¿]+", " ", w)
+
+        w = w.rstrip().strip()
+
+        # adding a start and an end token to the sentence
+        # so that the model know when to start and stop predicting.
+        w = '<start> ' + w + ' <end>'
+        return w
+
+
+    en_sentence = u"May I borrow this book?"
+    sp_sentence = u"¿Puedo tomar prestado este libro?"
+    print(preprocess_sentence(en_sentence).encode('utf-8'))
+    print(preprocess_sentence(sp_sentence).encode('utf-8'))
+  #+END_SRC
+
+  #+RESULTS: d3a32789-ac20-4be6-bab7-feb870e093a6
+  :results:
+  b'<start> may i borrow this book ? <end>'
+  b'<start> \xc2\xbf puedo tomar prestado este libro ? <end>'
+  :end:
+  
+  #+NAME: 787db588-8641-44fe-af61-66bb747bc282
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    # 1. Remove the accents
+    # 2. Clean the sentences
+    # 3. Return word pairs in the format: [ENGLISH, SPANISH]
+    def create_dataset(path, num_examples):
+        lines = io.open(path, encoding='UTF-8').read().strip().split('\n')
+        word_pairs = [[preprocess_sentence(w) for w in l.split('\t')]
+                      for l in lines[:num_examples]]
+        return zip(*word_pairs)
+
+
+    en, sp = create_dataset(path_to_file, None)
+    print(en[-1])
+    print(sp[-1])
+  #+END_SRC
+
+  #+RESULTS: 787db588-8641-44fe-af61-66bb747bc282
+  :results:
+  <start> if you want to sound like a native speaker , you must be willing to practice saying the same sentence over and over in the same way that banjo players practice the same phrase over and over until they can play it correctly and at the desired tempo . <end>
+  <start> si quieres sonar como un hablante nativo , debes estar dispuesto a practicar diciendo la misma frase una y otra vez de la misma manera en que un musico de banjo practica el mismo fraseo una y otra vez hasta que lo puedan tocar correctamente y en el tiempo esperado . <end>
+  :end:
+
+  #+NAME: 0dd7722a-e845-4abc-8e4e-794ac0fdae17
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    def max_length(tensor):
+        return max(len(t) for t in tensor)
+
+
+    def tokenize(lang):
+        lang_tokenizer = keras.preprocessing.text.Tokenizer(filters='')
+        lang_tokenizer.fit_on_texts(lang)
+        tensor = lang_tokenizer.texts_to_sequences(lang)
+        tensor = keras.preprocessing.sequence.pad_sequences(tensor, padding='post')
+        return tensor, lang_tokenizer
+
+
+    def load_dataset(path, num_examples=None):
+        # creating cleaned input, output pairs
+        targ_lang, inp_lang = create_dataset(path, num_examples)
+        input_tensor, inp_lang_tokenizer = tokenize(inp_lang)
+        target_tensor, targ_lang_tokenizer = tokenize(targ_lang)
+        return input_tensor, target_tensor, inp_lang_tokenizer, targ_lang_tokenizer
+  #+END_SRC
+
+  #+RESULTS: 0dd7722a-e845-4abc-8e4e-794ac0fdae17
+  :results:
+  :end:
+
+** Limit the size of the dataset to experiment faster
+   #+NAME: 3842e28f-32e7-4d89-b351-e9a9ad05b4d9
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer
+     # Try experimenting with the size of that dataset
+     num_examples = 30000
+     input_tensor, target_tensor, inp_lang, targ_lang = load_dataset(
+         path_to_file, num_examples)
+
+     # Calculate max_length of the target tensors
+     max_length_targ, max_length_inp = max_length(target_tensor), max_length(
+         input_tensor)
+
+     # input_tensor, target_tensor, inp_lang, targ_lang = load_dataset(path_to_file)
+     # # Calculate max_length of the target tensors
+     # max_length_targ, max_length_inp = max_length(target_tensor), max_length(
+     #     input_tensor)
+   #+END_SRC
+
+   #+RESULTS: 3842e28f-32e7-4d89-b351-e9a9ad05b4d9
+   :results:
+   :end:
+
+   #+NAME: 441ea3cb-dd3f-47ea-b7ab-8eb036dcb9ae
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     # Creating training and validation sets using an 80-20 split
+     input_tensor_train, input_tensor_val, target_tensor_train, target_tensor_val = train_test_split(
+         input_tensor, target_tensor, test_size=0.2)
+
+     # Show length
+     print(len(input_tensor_train), len(target_tensor_train), len(input_tensor_val),
+           len(target_tensor_val))
+   #+END_SRC
+
+   #+RESULTS: 441ea3cb-dd3f-47ea-b7ab-8eb036dcb9ae
+   :results:
+   24000 24000 6000 6000
+   :end:
+
+   #+NAME: 6b4a2261-f3de-4f20-b9f3-41ffbee82ee4
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     def convert(lang, tensor):
+         for t in tensor:
+             if t != 0:
+                 print("%d ----> %s" % (t, lang.index_word[t]))
+
+
+     print("Input Language; index to word mapping")
+     convert(inp_lang, input_tensor_train[0])
+     print()
+     print("Target Language; index to word mapping")
+     convert(targ_lang, target_tensor_train[0])
+   #+END_SRC
+
+   #+RESULTS: 6b4a2261-f3de-4f20-b9f3-41ffbee82ee4
+   :results:
+   Input Language; index to word mapping
+   1 ----> <start>
+   4 ----> tom
+   33 ----> los
+   1158 ----> abandono
+   3 ----> .
+   2 ----> <end>
+
+   Target Language; index to word mapping
+   1 ----> <start>
+   5 ----> tom
+   1442 ----> abandoned
+   126 ----> them
+   3 ----> .
+   2 ----> <end>
+   :end:
+
+** Create a tf.data dataset
+   #+NAME: a80e114e-978d-47fa-9ef4-36a9baffb003
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer 
+     BUFFER_SIZE = len(input_tensor_train)
+     BATCH_SIZE = 64
+     steps_per_epoch = len(input_tensor_train) // BATCH_SIZE
+     embedding_dim = 256
+     units = 1024
+     vocab_inp_size = len(inp_lang.word_index) + 1
+     vocab_tar_size = len(targ_lang.word_index) + 1
+
+     dataset = tf.data.Dataset.from_tensor_slices(
+         (input_tensor_train, target_tensor_train)).shuffle(BUFFER_SIZE)
+     dataset = dataset.batch(BATCH_SIZE, drop_remainder=True)
+   #+END_SRC
+
+   #+RESULTS: a80e114e-978d-47fa-9ef4-36a9baffb003
+   :results:
+   :end:
+
+   #+NAME: 4845060d-a849-43dc-b80a-57d871f54216
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     example_input_batch, example_target_batch = next(iter(dataset))
+     example_input_batch.shape, example_target_batch.shape
+   #+END_SRC
+
+   #+RESULTS: 4845060d-a849-43dc-b80a-57d871f54216
+   :results:
+   (TensorShape([64, 16]), TensorShape([64, 11]))
+   :end:
+  
+* With Encoder-Decoder model
+  #+NAME: da0422c9-820c-4e22-b529-f8fa62d32884
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    class Encoder(keras.Model):
+        def __init__(self, vocab_size, embedding_dim, enc_units, batch_sz):
+            super(Encoder, self).__init__()
+            self.batch_sz = batch_sz
+            self.enc_units = enc_units
+            self.embedding = layers.Embedding(vocab_size, embedding_dim)
+            self.gru = layers.GRU(self.enc_units,
+                                  return_sequences=True,
+                                  return_state=True,
+                                  recurrent_initializer='glorot_uniform')
+
+        def call(self, x, hidden):
+            x = self.embedding(x)
+            output, state = self.gru(x, initial_state=hidden)
+            return output, state
+
+        def initialize_hidden_state(self):
+            return tf.zeros((self.batch_sz, self.enc_units))
+  #+END_SRC
+
+  #+RESULTS: da0422c9-820c-4e22-b529-f8fa62d32884
+  :results:
+  :end:
+
+  #+NAME: 7c57b911-7084-408c-ad65-d5a8886bf36c
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    encoder = Encoder(vocab_inp_size, embedding_dim, units, BATCH_SIZE)
+
+    # sample input
+    sample_hidden = encoder.initialize_hidden_state()
+    sample_output, sample_hidden = encoder(example_input_batch, sample_hidden)
+    print_infos([
+        'Encoder output shape: (batch size, seq len, units) {}'.format(
+            sample_output.shape),
+        'Encoder hidden state shape: (batch size, units) {}'.format(
+            sample_hidden.shape)
+    ])
+  #+END_SRC
+
+  #+RESULTS: 7c57b911-7084-408c-ad65-d5a8886bf36c
+  :results:
+  Encoder output shape: (batch size, seq len, units) (64, 16, 1024)
+  Encoder hidden state shape: (batch size, units) (64, 1024)
+  :end:
+
+#+NAME: d3b70b35-1daa-4b50-b1e1-d90d02ef6491
+#+BEGIN_SRC ein-python :session localhost :results raw drawer
+  class BahdanauAttention(keras.Model):
+      def __init__(self, units):
+          super(BahdanauAttention, self).__init__()
+          self.W1 = layers.Dense(units)
+          self.W2 = layers.Dense(units)
+          self.V = layers.Dense(1)
+
+      def call(self, query, values):
+          hidden_with_time_axis = tf.expand_dims(query, 1)
+          score = self.V(
+              tf.nn.tanh(self.W1(values) + self.W2(hidden_with_time_axis)))
+          attention_weights = tf.nn.softmax(score, axis=1)
+          context_vector = attention_weights * values
+          context_vector = tf.reduce_sum(context_vector, axis=1)
+          return context_vector, attention_weights
+#+END_SRC
+
+#+RESULTS: d3b70b35-1daa-4b50-b1e1-d90d02ef6491
+:results:
+:end:
+
+#+NAME: 64946216-7ceb-4f86-9cb6-5db0e44a7d03
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  attention_layer = BahdanauAttention(10)
+  attention_result, attention_weights = attention_layer(sample_hidden,
+                                                        sample_output)
+
+  print_infos([
+      "Attention result shape: (batch size, units) {}".format(
+          attention_result.shape),
+      "Attention weights shape: (batch_size, sequence_length, 1) {}".format(
+          attention_weights.shape)
+  ])
+#+END_SRC
+
+#+RESULTS: 64946216-7ceb-4f86-9cb6-5db0e44a7d03
+:results:
+Attention result shape: (batch size, units) (64, 1024)
+Attention weights shape: (batch_size, sequence_length, 1) (64, 16, 1)
+:end:
+
+#+NAME: 09d2d5ed-e730-4b19-80c1-f44f3ff96654
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  class Decoder(tf.keras.Model):
+      def __init__(self, vocab_size, embedding_dim, dec_units, batch_sz):
+          super(Decoder, self).__init__()
+          self.batch_sz = batch_sz
+          self.dec_units = dec_units
+          self.embedding = tf.keras.layers.Embedding(vocab_size, embedding_dim)
+          self.gru = tf.keras.layers.GRU(self.dec_units,
+                                         return_sequences=True,
+                                         return_state=True,
+                                         recurrent_initializer='glorot_uniform')
+          self.fc = tf.keras.layers.Dense(vocab_size)
+          self.attention = BahdanauAttention(self.dec_units)
+
+      def call(self, x, hidden, enc_output):
+          # enc_output shape == (batch_size, max_length, hidden_size)
+          context_vector, attention_weights = self.attention(hidden, enc_output)
+
+          # x shape after passing through embedding == (batch_size, 1, embedding_dim)
+          x = self.embedding(x)
+
+          # x shape after concatenation == (batch_size, 1, embedding_dim + hidden_size)
+          x = tf.concat([tf.expand_dims(context_vector, 1), x], axis=-1)
+
+          # passing the concatenated vector to the GRU
+          output, state = self.gru(x)
+
+          # output shape == (batch_size * 1, hidden_size)
+          output = tf.reshape(output, (-1, output.shape[2]))
+
+          # output shape == (batch_size, vocab)
+          x = self.fc(output)
+
+          return x, state, attention_weights
+#+END_SRC
+
+#+RESULTS: 09d2d5ed-e730-4b19-80c1-f44f3ff96654
+:results:
+:end:
+
+#+NAME: 92a1b3aa-e9ef-4420-a1cf-57ace14c494c
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  decoder = Decoder(vocab_tar_size, embedding_dim, units, BATCH_SIZE)
+
+  sample_decoder_output, _, _ = decoder(tf.random.uniform((64, 1)),
+                                        sample_hidden, sample_output)
+
+  print('Decoder output shape: (batch_size, vocab size) {}'.format(
+      sample_decoder_output.shape))
+#+END_SRC
+
+#+RESULTS: 92a1b3aa-e9ef-4420-a1cf-57ace14c494c
+:results:
+Decoder output shape: (batch_size, vocab size) (64, 4935)
+:end:
+
+* Define optimizer and the loss function
+  except padding (= <pad> : 0) in calucuration of loss
+  #+NAME: 987c7f2b-d2b8-49cb-8e49-6fe3f237ea47
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    optimizer = tf.keras.optimizers.Adam()
+    loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True,
+                                                                reduction='none')
+
+
+    def loss_function(real, pred):
+        mask = tf.math.logical_not(tf.math.equal(real, 0))
+        loss_ = loss_object(real, pred)
+
+        mask = tf.cast(mask, dtype=loss_.dtype)
+        loss_ *= mask
+
+        return tf.reduce_mean(loss_)
+  #+END_SRC
+
+  #+RESULTS: 987c7f2b-d2b8-49cb-8e49-6fe3f237ea47
+  :results:
+  :end:
+
+* Checkpoints
+  #+NAME: b5af96bf-c892-434c-82f6-f9a5718bd753
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    checkpoint_dir = './training_checkpoints'
+    checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
+    checkpoint = tf.train.Checkpoint(optimizer=optimizer,
+                                     encoder=encoder,
+                                     decoder=decoder)
+  #+END_SRC
+
+  #+RESULTS: b5af96bf-c892-434c-82f6-f9a5718bd753
+  :results:
+  :end:
+
+* Training 
+  #+NAME: 0492ee9a-8591-4082-a6fe-ce1b03b8ad50
+  #+BEGIN_SRC ein-python :session localhost :results none
+    @tf.function
+    def train_step(inp, targ, enc_hidden):
+        loss = 0
+        with tf.GradientTape() as tape:
+            enc_output, enc_hidden = encoder(inp, enc_hidden)
+            dec_hidden = enc_hidden
+            dec_input = tf.expand_dims([targ_lang.word_index['<start>']] *
+                                       BATCH_SIZE, 1)
+
+            # Teacher forcing - feeding the target as the next input
+            for t in range(1, targ.shape[1]):
+                predictions, dec_hidden, _ = decoder(dec_input, dec_hidden,
+                                                     enc_output)
+                loss += loss_function(targ[:, t], predictions)
+                # using teacher forcing
+                dec_input = tf.expand_dims(targ[:, t], 1)
+        batch_loss = (loss / int(targ.shape[1]))
+        variables = encoder.trainable_variables + decoder.trainable_variables
+        gradients = tape.gradient(loss, variables)
+        optimizer.apply_gradients(zip(gradients, variables))
+        return batch_loss
+  #+END_SRC
+
+  #+RESULTS: 0492ee9a-8591-4082-a6fe-ce1b03b8ad50
+
+  #+NAME: 4d74a625-4bd6-4cbf-8ee2-074d0e30f0ef
+  #+BEGIN_SRC ein-python :session localhost :results none
+    EPOCHS = 10
+
+    for epoch in range(EPOCHS):
+        start = time.time()
+
+        enc_hidden = encoder.initialize_hidden_state()
+        total_loss = 0
+
+        for (batch, (inp, targ)) in enumerate(dataset.take(steps_per_epoch)):
+            batch_loss = train_step(inp, targ, enc_hidden)
+            total_loss += batch_loss
+            
+            if batch % 50 == 0:
+                print('Epoch {} Batch {} Loss {:.4f}'.format(
+                    epoch + 1, batch, batch_loss.numpy()))
+        # saving (checkpoint) the model every 2 epochs
+        if (epoch + 1) % 2 == 0:
+            checkpoint.save(file_prefix=checkpoint_prefix)
+
+        print('Epoch {} Loss {:.4f}'.format(epoch + 1,
+                                            total_loss / steps_per_epoch))
+        print('Time taken for 1 epoch {} sec\n'.format(time.time() - start))
+  #+END_SRC
+
+  #+RESULTS: 4d74a625-4bd6-4cbf-8ee2-074d0e30f0ef
+  Epoch 10 Loss 0.0693
+
+  
+
+  
+* Translate
+  #+NAME: 5481093f-a7bd-4680-b256-c13979a82280
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    def evaluate(sentence):
+        attention_plot = np.zeros((max_length_targ, max_length_inp))
+
+        sentence = preprocess_sentence(sentence)
+
+        inputs = [inp_lang.word_index[i] for i in sentence.split(' ')]
+        inputs = tf.keras.preprocessing.sequence.pad_sequences(
+            [inputs], maxlen=max_length_inp, padding='post')
+        inputs = tf.convert_to_tensor(inputs)
+
+        result = ''
+
+        hidden = [tf.zeros((1, units))]
+        enc_out, enc_hidden = encoder(inputs, hidden)
+
+        dec_hidden = enc_hidden
+        dec_input = tf.expand_dims([targ_lang.word_index['<start>']], 0)
+
+        for t in range(max_length_targ):
+            predictions, dec_hidden, attention_weights = decoder(
+                dec_input, dec_hidden, enc_out)
+
+            # storing the attention weights to plot later on
+            attention_weights = tf.reshape(attention_weights, (-1, ))
+            attention_plot[t] = attention_weights.numpy()
+
+            predicted_id = tf.argmax(predictions[0]).numpy()
+
+            result += targ_lang.index_word[predicted_id] + ' '
+
+            if targ_lang.index_word[predicted_id] == '<end>':
+                return result, sentence, attention_plot
+
+            # the predicted ID is fed back into the model
+            dec_input = tf.expand_dims([predicted_id], 0)
+
+        return result, sentence, attention_plot
+  #+END_SRC
+
+  #+RESULTS: 5481093f-a7bd-4680-b256-c13979a82280
+  :results:
+  :end:
+
+
+  #+NAME: 9e481e61-6f04-4369-b242-b509056914b3
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    # function for plotting the attention weights
+    def plot_attention(attention, sentence, predicted_sentence):
+        fig = plt.figure(figsize=(10,10))
+        ax = fig.add_subplot(1, 1, 1)
+        ax.matshow(attention, cmap='viridis')
+
+        fontdict = {'fontsize': 14}
+
+        ax.set_xticklabels([''] + sentence, fontdict=fontdict, rotation=90)
+        ax.set_yticklabels([''] + predicted_sentence, fontdict=fontdict)
+
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
+        ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
+
+        plt.show()
+  #+END_SRC
+
+  #+RESULTS: 9e481e61-6f04-4369-b242-b509056914b3
+  :results:
+  :end:
+
+  #+NAME: 3b0ab404-b9aa-4b20-88b2-91d3d4999052
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    def translate(sentence):
+        result, sentence, attention_plot = evaluate(sentence)
+
+        print('Input: %s' % (sentence))
+        print('Predicted translation: {}'.format(result))
+
+        attention_plot = attention_plot[:len(result.split(' ')
+                                             ), :len(sentence.split(' '))]
+        plot_attention(attention_plot, sentence.split(' '), result.split(' '))
+  #+END_SRC
+
+  #+RESULTS: 3b0ab404-b9aa-4b20-88b2-91d3d4999052
+  :results:
+  :end:
+
+  #+NAME: 1dc59e72-308e-4c02-b370-3d1d08023e68
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    # restoring the latest checkpoint in checkpoint_dir
+    checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
+  #+END_SRC
+
+  #+RESULTS: 1dc59e72-308e-4c02-b370-3d1d08023e68
+  :results:
+  <tensorflow.python.training.tracking.util.CheckpointLoadStatus at 0x7feb3adb6310>
+  :end:
+
+  #+NAME: 78ddb4c4-ec4f-424c-8211-f06184502afa
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    translate(u'hace mucho frio aqui.')
+  #+END_SRC
+
+  #+RESULTS: 78ddb4c4-ec4f-424c-8211-f06184502afa
+  :results:
+  Input: <start> hace mucho frio aqui . <end>
+  Predicted translation: it s cold cold . <end> 
+
+  [[file:ein-images/ob-ein-225c4fa76bce9fc77d2dd197455281f3.png]]
+  :end:
+
+  #+NAME: 5fb61b23-8b67-4b86-a53b-90c7837b3e94
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    tf.expand_dims([targ_lang.word_index['<start>']], 0)
+  #+END_SRC
+
+  #+RESULTS: 5fb61b23-8b67-4b86-a53b-90c7837b3e94
+  :results:
+  <tf.Tensor: id=45667, shape=(1, 1), dtype=int32, numpy=array([[1]], dtype=int32)>
+  :end:

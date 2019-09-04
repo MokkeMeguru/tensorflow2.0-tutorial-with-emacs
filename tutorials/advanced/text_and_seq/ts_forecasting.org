@@ -1,0 +1,828 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: Time series forecasting
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+      import tensorflow_probability as tfp
+      # from tensorflow_examples.models.pix2pix import pix2pix
+
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      from tensorflow.keras.models import Sequential
+      # import tensorflow_text as text
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+
+      import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      # import pathlib
+      # import random
+      # import IPython.display as display
+      # from IPython.display import clear_output
+      # import PIL.Image as Image
+      # import urllib3
+      # import io
+      import tempfile
+      from pprint import pprint
+
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      def pprint_infos(infolist: list):
+          for info in infolist:
+              pprint(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+          # '{:25}: {}'.format("tensorflow\'s version", hub.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+      # urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+
+
+  #+NAME: 575b2fcb-d09e-4bd5-8d0c-9d9e15ee2091
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    import matplotlib as mpl
+    mpl.rcParams['figure.figsize'] = (8, 6)
+    mpl.rcParams['axes.grid'] = False
+  #+END_SRC
+
+  #+RESULTS: 575b2fcb-d09e-4bd5-8d0c-9d9e15ee2091
+  :results:
+  :end:
+* データセットのインポート
+  #+NAME: 2a724103-1d4b-43fa-b5f8-e3d86b577f0d
+  #+BEGIN_SRC ein-python :session localhost :results none
+    zip_path = tf.keras.utils.get_file(
+        origin=
+        'https://storage.googleapis.com/tensorflow/tf-keras-datasets/jena_climate_2009_2016.csv.zip',
+        fname='jena_climate_2009_2016.csv.zip',
+        extract=True)
+    csv_path, _ = os.path.splitext(zip_path)
+  #+END_SRC
+
+  #+NAME: 21fa2147-4c0c-4234-acce-53e0f62d4480
+  #+RESULTS: 2a724103-1d4b-43fa-b5f8-e3d86b577f0d
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    df = pd.read_csv(csv_path)
+    df.head()
+  #+END_SRC
+
+  #+RESULTS: 21fa2147-4c0c-4234-acce-53e0f62d4480
+  :results:
+               Date Time  p (mbar)  T (degC)  Tpot (K)  Tdew (degC)  rh (%)  \
+  0  01.01.2009 00:10:00    996.52     -8.02    265.40        -8.90    93.3   
+  1  01.01.2009 00:20:00    996.57     -8.41    265.01        -9.28    93.4   
+  2  01.01.2009 00:30:00    996.53     -8.51    264.91        -9.31    93.9   
+  3  01.01.2009 00:40:00    996.51     -8.31    265.12        -9.07    94.2   
+  4  01.01.2009 00:50:00    996.51     -8.27    265.15        -9.04    94.1   
+
+     VPmax (mbar)  VPact (mbar)  VPdef (mbar)  sh (g/kg)  H2OC (mmol/mol)  \
+  0          3.33          3.11          0.22       1.94             3.12   
+  1          3.23          3.02          0.21       1.89             3.03   
+  2          3.21          3.01          0.20       1.88             3.02   
+  3          3.26          3.07          0.19       1.92             3.08   
+  4          3.27          3.08          0.19       1.92             3.09   
+
+     rho (g/m**3)  wv (m/s)  max. wv (m/s)  wd (deg)  
+  0       1307.75      1.03           1.75     152.3  
+  1       1309.80      0.72           1.50     136.1  
+  2       1310.24      0.19           0.63     171.6  
+  3       1309.19      0.34           0.50     198.0  
+  4       1309.00      0.32           0.63     214.3  
+  :end:
+
+  [  history_size (given)  ] : [   target_size   (predict) ] 
+  #+NAME: c082703a-f0e1-48db-a4d3-3f78b202d6ab
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    def univariate_data(dataset, start_index, end_index, history_size,
+                        target_size):
+        data = []
+        labels = []
+
+        start_index = start_index + history_size
+        if end_index is None:
+            end_index = len(dataset) - target_size
+
+        for i in range(start_index, end_index):
+            indices = range(i - history_size, i)
+            # Reshape data from (history_size,) to (history_size, 1)
+            data.append(np.reshape(dataset[indices], (history_size, 1)))
+            labels.append(dataset[i + target_size])
+        return np.array(data), np.array(labels)
+  #+END_SRC
+
+  #+RESULTS: c082703a-f0e1-48db-a4d3-3f78b202d6ab
+  :results:
+  :end:
+
+  #+NAME: fbc53774-919e-4cc7-87bf-6bb565f0f259
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    TRAIN_SPLIT = 300000
+    tf.random.set_seed(13)
+  #+END_SRC
+
+  #+RESULTS: fbc53774-919e-4cc7-87bf-6bb565f0f259
+  :results:
+  :end:
+* Forecast a univariate time series
+  #+NAME: 504e8537-2774-472e-838a-7f74630d3eaf
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    uni_data = df['T (degC)']
+    uni_data.index = df['Date Time']
+    uni_data.head()
+  #+END_SRC
+
+  #+RESULTS: 504e8537-2774-472e-838a-7f74630d3eaf
+  :results:
+  Date Time
+  01.01.2009 00:10:00   -8.02
+  01.01.2009 00:20:00   -8.41
+  01.01.2009 00:30:00   -8.51
+  01.01.2009 00:40:00   -8.31
+  01.01.2009 00:50:00   -8.27
+  Name: T (degC), dtype: float64
+  :end:
+
+
+  #+NAME: c8a8310b-7f06-41ea-b0c7-b0002c5f3856
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    uni_data.plot(subplots=True)
+  #+END_SRC
+
+  #+RESULTS: c8a8310b-7f06-41ea-b0c7-b0002c5f3856
+  :results:
+  array([<matplotlib.axes._subplots.AxesSubplot object at 0x7f26ac4d5590>],
+        dtype=object)
+  [[file:ein-images/ob-ein-1892b47129534df65136d5206d5b85bf.png]]
+  :end:
+
+  #+NAME: 77f515c5-85ef-4e9d-b22b-1258e3c1b05d
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    uni_data = uni_data.values
+    uni_data
+  #+END_SRC
+
+  #+RESULTS: 77f515c5-85ef-4e9d-b22b-1258e3c1b05d
+  :results:
+  array([-8.02, -8.41, -8.51, ..., -3.16, -4.23, -4.82])
+  :end:
+  
+  Normalization
+  #+NAME: bbb33711-3155-42a6-a568-8fd2e9848a2e
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    uni_train_mean = uni_data[:TRAIN_SPLIT].mean()
+    uni_train_std = uni_data[:TRAIN_SPLIT].std()
+
+    uni_data = (uni_data - uni_train_mean) / uni_train_std
+  #+END_SRC
+
+  #+RESULTS: bbb33711-3155-42a6-a568-8fd2e9848a2e
+  :results:
+  :end:
+  
+  Generate dataset
+  #+NAME: 3ed90ca4-ea8d-4578-8a84-0f8508eb5fcb
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    univariate_past_history = 20
+    univariate_future_target = 0
+
+    x_train_uni, y_train_uni = univariate_data(uni_data, 0, TRAIN_SPLIT,
+                                               univariate_past_history,
+                                               univariate_future_target)
+    x_val_uni, y_val_uni = univariate_data(uni_data, TRAIN_SPLIT, None,
+                                           univariate_past_history,
+                                           univariate_future_target)
+  #+END_SRC
+
+  #+RESULTS: 3ed90ca4-ea8d-4578-8a84-0f8508eb5fcb
+  :results:
+  :end:
+
+  #+NAME: 074356e9-da9f-4cde-bd30-37a1eb80aa0b
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    print ('Single window of past history')
+    print (x_train_uni[0])
+    print ('\n Target temperature to predict')
+    print (y_train_uni[0])
+  #+END_SRC
+
+  #+RESULTS: 074356e9-da9f-4cde-bd30-37a1eb80aa0b
+  :results:
+  Single window of past history
+  [[-1.99766294]
+   [-2.04281897]
+   [-2.05439744]
+   [-2.0312405 ]
+   [-2.02660912]
+   [-2.00113649]
+   [-1.95134907]
+   [-1.95134907]
+   [-1.98492663]
+   [-2.04513467]
+   [-2.08334362]
+   [-2.09723778]
+   [-2.09376424]
+   [-2.09144854]
+   [-2.07176515]
+   [-2.07176515]
+   [-2.07639653]
+   [-2.08913285]
+   [-2.09260639]
+   [-2.10418486]]
+
+   Target temperature to predict
+  -2.1041848598100876
+  :end:
+
+  #+NAME: 9f1b3cef-f5ad-43a9-acc4-36a2208e8ae0
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    def create_time_steps(length):
+        time_steps = []
+        for i in range(-length, 0, 1):
+            time_steps.append(i)
+        return time_steps
+
+
+    def show_plot(plot_data, delta, title):
+        labels = ['History', 'True Future', 'Model Prediction']
+        marker = ['.-', 'rx', 'go']
+        time_steps = create_time_steps(plot_data[0].shape[0])
+        if delta:
+            future = delta
+        else:
+            future = 0
+
+        plt.title(title)
+        for i, x in enumerate(plot_data):
+            if i:
+                plt.plot(
+                    future,
+                    plot_data[i],  # y_train_uni[0]
+                    marker[i],  # rx
+                    markersize=10,
+                    label=labels[i])  # True Future
+            else:
+                plt.plot(
+                    time_steps,
+                    plot_data[i].flatten(),  # x_train_uni[0].flatten()
+                    marker[i],  # .-
+                    label=labels[i])  # History
+        plt.legend()
+        plt.xlim([time_steps[0], (future + 5) * 2])
+        plt.xlabel('Time-Step')
+        return plt
+
+
+    show_plot([x_train_uni[0], y_train_uni[0]], 0, 'Sample Example')
+  #+END_SRC
+
+  #+RESULTS: 9f1b3cef-f5ad-43a9-acc4-36a2208e8ae0
+  :results:
+  <module 'matplotlib.pyplot' from '/home/meguru/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/matplotlib/pyplot.py'>
+  [[file:ein-images/ob-ein-9b12deaea96f8b2ab14fad89b57229cb.png]]
+  :end:
+  
+
+** Baseline
+   #+NAME: b2f4cebf-388a-460d-8aa0-fb80f3e147c4
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     def baseline(history):
+         return np.mean(history)
+
+
+     show_plot([x_train_uni[0], y_train_uni[0],
+                baseline(x_train_uni[0])], 0, 'Baseline Prediction Example')
+   #+END_SRC
+
+   #+RESULTS: b2f4cebf-388a-460d-8aa0-fb80f3e147c4
+   :results:
+   <module 'matplotlib.pyplot' from '/home/meguru/Github/tensorflow-2.0tutorial-with-emacs/venv/lib/python3.7/site-packages/matplotlib/pyplot.py'>
+   [[file:ein-images/ob-ein-5208bda0263ba3057fd71caa761f0b38.png]]
+   :end:
+
+** Recurrent neural network
+   #+NAME: 0a86140a-2cdb-45d3-b743-bbccd6fd54a1
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     BATCH_SIZE = 256
+     BUFFER_SIZE = 10000
+     train_univariate = tf.data.Dataset.from_tensor_slices(
+         (x_train_uni,
+          y_train_uni)).cache().shuffle(BUFFER_SIZE).batch(BATCH_SIZE).repeat()
+
+     val_univariate = tf.data.Dataset.from_tensor_slices(
+         (x_val_uni, y_val_uni)).batch(BATCH_SIZE).repeat()
+
+     # batch size x time steps x features
+   #+END_SRC
+
+   #+RESULTS: 0a86140a-2cdb-45d3-b743-bbccd6fd54a1
+   :results:
+   (299980, 20, 1)
+   :end:
+
+
+#+NAME: 478ba601-a96f-4dc9-a5eb-ffd9e0746720
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  simple_lstm_model = Sequential(
+      [layers.LSTM(8, input_shape=x_train_uni.shape[-2:]),
+       layers.Dense(1)])
+
+  simple_lstm_model.compile(optimizer='adam', loss='mae')
+
+  simple_lstm_model.summary()
+#+END_SRC
+
+#+RESULTS: 478ba601-a96f-4dc9-a5eb-ffd9e0746720
+:results:
+Model: "sequential_4"
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+lstm_1 (LSTM)                (None, 8)                 320       
+_________________________________________________________________
+dense_13 (Dense)             (None, 1)                 9         
+=================================================================
+Total params: 329
+Trainable params: 329
+Non-trainable params: 0
+_________________________________________________________________
+:end:
+
+#+NAME: 0e0b9c76-a671-4163-81be-f82a2ce52690
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  for x, y in val_univariate.take(1):
+      print(simple_lstm_model.predict(x).shape)
+
+  # batch size x 1
+#+END_SRC
+
+#+RESULTS: 0e0b9c76-a671-4163-81be-f82a2ce52690
+:results:
+(256, 1)
+:end:
+
+
+#+NAME: d00b8d69-4375-4bcb-aaf6-d99e14183d94
+#+BEGIN_SRC ein-python :session localhost :results none
+  EVALUATION_INTERVAL = 200
+  EPOCHS = 10
+
+  simple_lstm_model.fit(train_univariate,
+                        epochs=EPOCHS,
+                        steps_per_epoch=EVALUATION_INTERVAL,
+                        validation_data=val_univariate,
+                        validation_steps=50)
+#+END_SRC
+
+#+RESULTS: d00b8d69-4375-4bcb-aaf6-d99e14183d94
+
+
+#+NAME: 6e983c3c-9c64-4a59-8bbd-db013c26812a
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  for x, y in val_univariate.take(3):
+      plot = show_plot(
+          [x[0].numpy(), y[0].numpy(),
+           simple_lstm_model.predict(x)[0]], 0, 'Simple LSTM model')
+      plot.show()
+#+END_SRC
+
+#+RESULTS: 6e983c3c-9c64-4a59-8bbd-db013c26812a
+:results:
+[[file:ein-images/ob-ein-a27a836866eb2ac73ab09c0d32efe5ba.png]]
+[[file:ein-images/ob-ein-89ba94b4ef48fb57a5f68e5d5c29161b.png]]
+[[file:ein-images/ob-ein-60cf02b15fbfee40593da86cda8e9bfd.png]]
+:end:
+
+* Forecast a multivariate time series
+  #+NAME: f8f5eb78-2ab4-4039-83e3-08e4285a5d2d
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :eports both
+    features_considered = ['p (mbar)', 'T (degC)', 'rho (g/m**3)']
+    features = df[features_considered]
+    features.index = df['Date Time']
+    features.head()
+  #+END_SRC
+
+  #+RESULTS: f8f5eb78-2ab4-4039-83e3-08e4285a5d2d
+  :results:
+                       p (mbar)  T (degC)  rho (g/m**3)
+  Date Time                                            
+  01.01.2009 00:10:00    996.52     -8.02       1307.75
+  01.01.2009 00:20:00    996.57     -8.41       1309.80
+  01.01.2009 00:30:00    996.53     -8.51       1310.24
+  01.01.2009 00:40:00    996.51     -8.31       1309.19
+  01.01.2009 00:50:00    996.51     -8.27       1309.00
+  :end:
+
+  
+
+  #+NAME: 33f34d21-768e-4c4c-bb1b-9fffd86e9cb1
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    features.plot(subplots=True)
+  #+END_SRC
+
+  #+RESULTS: 33f34d21-768e-4c4c-bb1b-9fffd86e9cb1
+  :results:
+  array([<matplotlib.axes._subplots.AxesSubplot object at 0x7f24480d3150>,
+         <matplotlib.axes._subplots.AxesSubplot object at 0x7f24480f1690>,
+         <matplotlib.axes._subplots.AxesSubplot object at 0x7f24480a67d0>],
+        dtype=object)
+  [[file:ein-images/ob-ein-5cbce2b526be126fdc627bb587f0cd4f.png]]
+  :end:
+
+  #+NAME: 6c373ada-268d-4ce5-9e4c-462eda0bbb59
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    dataset = features.values
+    data_mean = dataset.mean(axis=0)
+    data_std = dataset.std(axis=0)
+
+    dataset = (dataset - data_mean) / data_std
+  #+END_SRC
+
+  #+RESULTS: 6c373ada-268d-4ce5-9e4c-462eda0bbb59
+  :results:
+  :end:
+
+  #+NAME: f9126475-eda9-4e6d-8ef2-9ff5bfd102b2
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    def multivariate_data(dataset,
+                          target,
+                          start_index,
+                          end_index,
+                          history_size,
+                          target_size,
+                          step,
+                          single_step=False):
+        data = []
+        labels = []
+        start_index = start_index + history_size
+        if end_index is None:
+            end_index = len(dataset) - target_size
+
+        for i in range(start_index, end_index):
+            indices = range(i - history_size, i, step)
+            data.append(dataset[indices])
+
+            if single_step:
+                labels.append(target[i + target_size])
+            else:
+                labels.append(target[i:i + target_size])
+
+        return np.array(data), np.array(labels)
+  #+END_SRC
+
+  #+RESULTS: f9126475-eda9-4e6d-8ef2-9ff5bfd102b2
+  :results:
+  :end:
+
+  #+NAME: 6c44735d-eff3-498f-aea1-2a83f73a2403
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    past_history = 720
+    future_target = 72
+    STEP = 6  # sample by 6 steps
+
+    x_train_single, y_train_single = multivariate_data(dataset,
+                                                       dataset[:, 1],
+                                                       0,
+                                                       TRAIN_SPLIT,
+                                                       past_history,
+                                                       future_target,
+                                                       STEP,
+                                                       single_step=True)
+    x_val_single, y_val_single = multivariate_data(dataset,
+                                                   dataset[:, 1],
+                                                   TRAIN_SPLIT,
+                                                   None,
+                                                   past_history,
+                                                   future_target,
+                                                   STEP,
+                                                   single_step=True)
+
+    print('Single window of past history : {}'.format(x_train_single[0].shape))
+  #+END_SRC
+
+  #+RESULTS: 6c44735d-eff3-498f-aea1-2a83f73a2403
+  :results:
+  Single window of past history : (120, 3)
+  :end:
+
+  #+NAME: 98e5856a-5b62-4768-a507-2811bb7e89bd
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    train_data_single = tf.data.Dataset.from_tensor_slices(
+        (x_train_single, y_train_single))
+    train_data_single = train_data_single.cache().shuffle(BUFFER_SIZE).batch(
+        BATCH_SIZE).repeat()
+
+    val_data_single = tf.data.Dataset.from_tensor_slices(
+        (x_val_single, y_val_single))
+    val_data_single = val_data_single.batch(BATCH_SIZE).repeat()
+  #+END_SRC
+
+  #+RESULTS: 98e5856a-5b62-4768-a507-2811bb7e89bd
+  :results:
+  :end:
+
+  #+NAME: fb6d72da-9f4c-468b-9370-79b46adf6208
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    single_step_model = tf.keras.models.Sequential()
+    single_step_model.add(
+        tf.keras.layers.LSTM(32, input_shape=x_train_single.shape[-2:]))
+    single_step_model.add(tf.keras.layers.Dense(1))
+
+    single_step_model.compile(optimizer=tf.keras.optimizers.RMSprop(), loss='mae')
+
+    single_step_model.summary()
+  #+END_SRC
+
+  #+RESULTS: fb6d72da-9f4c-468b-9370-79b46adf6208
+  :results:
+  Model: "sequential_6"
+  _________________________________________________________________
+  Layer (type)                 Output Shape              Param #   
+  =================================================================
+  lstm_3 (LSTM)                (None, 32)                4608      
+  _________________________________________________________________
+  dense_15 (Dense)             (None, 1)                 33        
+  =================================================================
+  Total params: 4,641
+  Trainable params: 4,641
+  Non-trainable params: 0
+  _________________________________________________________________
+  :end:
+
+  #+NAME: 490abc8e-7769-412d-9fb1-463166993fd2
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer 
+    for x, y in val_data_single.take(1):
+        print(single_step_model.predict(x).shape)
+  #+END_SRC
+
+  #+RESULTS: 490abc8e-7769-412d-9fb1-463166993fd2
+  :results:
+  (256, 1)
+  :end:
+
+  #+NAME: a416da88-a2ae-4e2a-b081-276d1604d4cc
+  #+BEGIN_SRC ein-python :session localhost :results none
+    single_step_history = single_step_model.fit(
+        train_data_single,
+        epochs=EPOCHS,
+        steps_per_epoch=EVALUATION_INTERVAL,
+        validation_data=val_data_single,
+        validation_steps=50)
+  #+END_SRC
+
+  #+RESULTS: a416da88-a2ae-4e2a-b081-276d1604d4cc
+  
+  #+NAME: 196649c1-243d-4160-8ff3-41b6c65a2fd9
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    def plot_train_history(history, title):
+        loss = history.history['loss']
+        val_loss = history.history['val_loss']
+
+        epochs = range(len(loss))
+
+        plt.figure()
+
+        plt.plot(epochs, loss, 'b', label='Training loss')
+        plt.plot(epochs, val_loss, 'r', label='Validation loss')
+        plt.title(title)
+        plt.legend()
+
+        plt.show()
+
+
+    plot_train_history(single_step_history,
+                       'Single Step Training and validation loss')
+  #+END_SRC
+
+  #+RESULTS: 196649c1-243d-4160-8ff3-41b6c65a2fd9
+  :results:
+  [[file:ein-images/ob-ein-1216bbe50314bfcd45007e07d066502e.png]]
+  :end:
+
+*** Predict a single step future
+  #+NAME: e95b5868-5dbe-45be-a95d-2d951bbf8c83
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    for x, y in val_data_single.take(3):
+        plot = show_plot(
+            [x[0][:, 1].numpy(), y[0].numpy(),
+             single_step_model.predict(x)[0]], 12, 'Single Step Prediction')
+        plot.show()
+  #+END_SRC
+
+  #+RESULTS: e95b5868-5dbe-45be-a95d-2d951bbf8c83
+  :results:
+  [[file:ein-images/ob-ein-5ee6e191aec40b38635072626eb72b79.png]]
+  [[file:ein-images/ob-ein-24a557ed1efd358c7283baca537503d7.png]]
+  [[file:ein-images/ob-ein-a6f429809ccdc22210303e3c0700c01d.png]]
+  :end:
+** Multi-Step Model
+  #+NAME: 216dfafe-bfd1-4a3a-8d7b-63f674af4fbf
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    future_target = 72
+    x_train_multi, y_train_multi = multivariate_data(dataset, dataset[:, 1], 0,
+                                                     TRAIN_SPLIT, past_history,
+                                                     future_target, STEP)
+    x_val_multi, y_val_multi = multivariate_data(dataset, dataset[:, 1],
+                                                 TRAIN_SPLIT, None, past_history,
+                                                 future_target, STEP)
+  #+END_SRC
+
+  #+RESULTS: 216dfafe-bfd1-4a3a-8d7b-63f674af4fbf
+  :results:
+  :end:
+
+  #+NAME: d3fee7fe-e286-43b0-ac0c-bd64b389837a
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    print('Single window of past history : {}'.format(x_train_multi[0].shape))
+    print('\n Target temperature to predict : {}'.format(y_train_multi[0].shape))
+  #+END_SRC
+
+  #+RESULTS: d3fee7fe-e286-43b0-ac0c-bd64b389837a
+  :results:
+  Single window of past history : (120, 3)
+
+   Target temperature to predict : (72,)
+  :end:
+
+  #+NAME: 06ac03a1-0a4a-4ee8-bc65-fe7a0e97ac3a
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    train_data_multi = tf.data.Dataset.from_tensor_slices(
+        (x_train_multi, y_train_multi))
+    train_data_multi = train_data_multi.cache().shuffle(BUFFER_SIZE).batch(
+        BATCH_SIZE).repeat()
+
+    val_data_multi = tf.data.Dataset.from_tensor_slices((x_val_multi, y_val_multi))
+    val_data_multi = val_data_multi.batch(BATCH_SIZE).repeat()
+  #+END_SRC
+
+  #+RESULTS: 06ac03a1-0a4a-4ee8-bc65-fe7a0e97ac3a
+  :results:
+  :end:
+
+  #+NAME: d4c24fa8-6215-4464-be8f-7e94df0a7c2c
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    def multi_step_plot(history, true_future, prediction):
+        plt.figure(figsize=(12, 6))
+        num_in = create_time_steps(len(history))
+        num_out = len(true_future)
+
+        plt.plot(num_in, np.array(history[:, 1]), label='History')
+        plt.plot(np.arange(num_out) / STEP,
+                 np.array(true_future),
+                 'bo',
+                 label='True Future')
+        if prediction.any():
+            plt.plot(np.arange(num_out) / STEP,
+                     np.array(prediction),
+                     'ro',
+                     label='Predicted Future')
+        plt.legend(loc='upper left')
+        plt.show()
+
+
+    for x, y in train_data_multi.take(1):
+        multi_step_plot(x[0], y[0], np.array([0]))
+  #+END_SRC
+
+  #+RESULTS: d4c24fa8-6215-4464-be8f-7e94df0a7c2c
+  :results:
+  [[file:ein-images/ob-ein-801f1df756ffda355e022280432b3493.png]]
+  :end:
+
+  #+NAME: 726a8f41-e489-4d25-ad97-6589e61d19f0
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    multi_step_model = tf.keras.models.Sequential()
+    multi_step_model.add(
+        tf.keras.layers.LSTM(32,
+                             return_sequences=True,
+                             input_shape=x_train_multi.shape[-2:]))
+    multi_step_model.add(tf.keras.layers.LSTM(16, activation='relu'))
+    multi_step_model.add(tf.keras.layers.Dense(72))
+
+    multi_step_model.compile(optimizer=tf.keras.optimizers.RMSprop(clipvalue=1.0),
+                             loss='mae')
+
+    multi_step_model.summary()
+  #+END_SRC
+
+  #+RESULTS: 726a8f41-e489-4d25-ad97-6589e61d19f0
+  :results:
+  Model: "sequential_7"
+  _________________________________________________________________
+  Layer (type)                 Output Shape              Param #   
+  =================================================================
+  lstm_4 (LSTM)                (None, 120, 32)           4608      
+  _________________________________________________________________
+  lstm_5 (LSTM)                (None, 16)                3136      
+  _________________________________________________________________
+  dense_16 (Dense)             (None, 72)                1224      
+  =================================================================
+  Total params: 8,968
+  Trainable params: 8,968
+  Non-trainable params: 0
+  _________________________________________________________________
+  :end:
+
+  #+NAME: a4565c4c-9d27-42df-b4fb-48e7c91ba9f1
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    for x, y in val_data_multi.take(1):
+        print(multi_step_model.predict(x).shape)
+  #+END_SRC
+
+  #+RESULTS: a4565c4c-9d27-42df-b4fb-48e7c91ba9f1
+  :results:
+  (256, 72)
+  :end:
+
+  #+NAME: e191831e-1542-4407-b55d-d0fe9baf5844
+  #+BEGIN_SRC ein-python :session localhost :results none
+    multi_step_history = multi_step_model.fit(train_data_multi,
+                                              epochs=EPOCHS,
+                                              steps_per_epoch=EVALUATION_INTERVAL,
+                                              validation_data=val_data_multi,
+                                              validation_steps=50)
+  #+END_SRC
+
+  #+RESULTS: e191831e-1542-4407-b55d-d0fe9baf5844
+
+  #+NAME: 1554a0bc-2e8a-4503-9379-8beccd21ae06
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    plot_train_history(multi_step_history, 'Multi-Step Training and validation loss')
+  #+END_SRC
+
+  #+RESULTS: 1554a0bc-2e8a-4503-9379-8beccd21ae06
+  :results:
+  [[file:ein-images/ob-ein-ce3d20b585779a28ca26d43a811ca4ee.png]]
+  :end:
+ 
+  #+NAME: 306c3902-0e20-47fa-9788-12b24b399469
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    for x, y in val_data_multi.take(3):
+        multi_step_plot(x[0], y[0], multi_step_model.predict(x)[0])
+  #+END_SRC
+
+  #+RESULTS: 306c3902-0e20-47fa-9788-12b24b399469
+  :results:
+  [[file:ein-images/ob-ein-a3c59ee427203a5021b0ee35e36c0a88.png]]
+  [[file:ein-images/ob-ein-850d3d8181d6fb47ada94f79dc97a151.png]]
+  [[file:ein-images/ob-ein-4784483e445cebdfaf05b48853043b00.png]]
+  :end:

@@ -1,0 +1,1205 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: Transformer
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+# #+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+      import tensorflow_probability as tfp
+      # from tensorflow_examples.models.pix2pix import pix2pix
+
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      from tensorflow.keras.models import Sequential
+      # import tensorflow_text as text
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+      import matplotlib.ticker as ticker
+      
+      import pandas as pd
+      from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      import time
+      # import yaml
+      # import h5py
+      # import pathlib
+      # import random
+      # import IPython.display as display
+      # from IPython.display import clear_output
+      # import PIL.Image as Image
+      # import urllib3
+      import io
+      import tempfile
+      from pprint import pprint
+      
+      import unicodedata
+      import re
+      import time
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      def pprint_infos(infolist: list):
+          for info in infolist:
+              pprint(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+          # '{:25}: {}'.format("tensorflow\'s version", hub.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+      # urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+
+* データセットのインポート
+  #+NAME: 09cdc931-a341-4280-9c21-70df8dee1cb5
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    examples, metadata = tfds.load('ted_hrlr_translate/pt_to_en',
+                                   with_info=True,
+                                   as_supervised=True)
+    train_examples, val_examples = examples['train'], examples['validation']
+
+    for pt_ex, en_ex in train_examples.take(1):
+        print(pt_ex.numpy())
+        print(en_ex.numpy())
+  #+END_SRC
+
+  #+RESULTS: 09cdc931-a341-4280-9c21-70df8dee1cb5
+  :results:
+  WARNING: Logging before flag parsing goes to stderr.
+  W0904 14:16:00.669344 139700101117568 dataset_builder.py:439] Warning: Setting shuffle_files=True because split=TRAIN and shuffle_files=None. This behavior will be deprecated on 2019-08-06, at which point shuffle_files=False will be the default for all splits.
+
+  b'os astr\xc3\xb3nomos acreditam que cada estrela da gal\xc3\xa1xia tem um planeta , e especulam que at\xc3\xa9 um quinto deles tem um planeta do tipo da terra que poder\xc3\xa1 ter vida , mas ainda n\xc3\xa3o vimos nenhum deles .'
+  b"astronomers now believe that every star in the galaxy has a planet , and they speculate that up to one fifth of them have an earth-like planet that might be able to harbor life , but we have n't seen any of them ."
+  :end:
+
+
+
+  #+NAME: 9809b7d9-9114-46c9-844b-e2ae08fdfd38
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    tokenizer_en = tfds.features.text.SubwordTextEncoder.build_from_corpus(
+        (en.numpy() for pt, en in train_examples), target_vocab_size=2**13)
+
+    tokenizer_pt = tfds.features.text.SubwordTextEncoder.build_from_corpus(
+        (pt.numpy() for pt, en in train_examples), target_vocab_size=2**13)
+    sample_string = 'Transformer is awesome.'
+    tokenized_string = tokenizer_en.encode(sample_string)
+    original_string = tokenizer_en.decode(tokenized_string)
+    assert original_string == sample_string
+
+    print_infos([
+        'Tokenized string is {}'.format(tokenized_string),
+        'The original string: {}'.format(original_string)
+    ])
+  #+END_SRC
+
+  #+RESULTS: 9809b7d9-9114-46c9-844b-e2ae08fdfd38
+  :results:
+  Tokenized string is [7915, 1248, 7946, 7194, 13, 2799, 7877]
+  The original string: Transformer is awesome.
+  :end:
+
+  #+NAME: 50a19435-a016-43c9-af56-67cdfc39bf0d
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    for ts in tokenized_string:
+        print('{} -> {}'.format(ts, tokenizer_en.decode([ts])))
+  #+END_SRC
+
+  #+RESULTS: 50a19435-a016-43c9-af56-67cdfc39bf0d
+  :results:
+  7915 -> T
+  1248 -> ran
+  7946 -> s
+  7194 -> former 
+  13 -> is 
+  2799 -> awesome
+  7877 -> .
+  :end:
+
+  #+NAME: 2514ec54-7fc5-4379-a5f5-7b438e91e973
+  #+BEGIN_SRC ein-python :session localhost :results none
+    BUFFER_SIZE = 20000
+    BATCH_SIZE = 64
+    def encode(lang1, lang2):
+        # <start> = (tokenizer_pt / tokenizer_en) .vocab_size
+        # <end> = (tokenizer_pt / tokenizer_en) .vocab_size + 1
+        lang1 = [tokenizer_pt.vocab_size] + tokenizer_pt.encode(
+            lang1.numpy()) + [tokenizer_pt.vocab_size + 1]
+        lang2 = [tokenizer_en.vocab_size] + tokenizer_en.encode(
+            lang2.numpy()) + [tokenizer_en.vocab_size + 1]
+        return lang1, lang2
+  #+END_SRC
+
+  #+RESULTS: 2514ec54-7fc5-4379-a5f5-7b438e91e973
+
+  #+NAME: 76f7723e-d3c5-4c2d-b0ac-7325f3d15b31
+  #+BEGIN_SRC ein-python :session localhost :results none
+    MAX_LENGTH = 40
+
+
+    def filter_max_length(x, y, max_length=MAX_LENGTH):
+        return tf.logical_and(tf.size(x) <= max_length, tf.size(y) <= max_length)
+
+
+    def tf_encode(pt, en):
+        return tf.py_function(encode, [pt, en], [tf.int64, tf.int64])
+  #+END_SRC
+
+  #+RESULTS: 76f7723e-d3c5-4c2d-b0ac-7325f3d15b31
+  
+  #+NAME: 879a3848-81de-48d4-8e74-e21a3908a62c
+  #+BEGIN_SRC ein-python :session localhost :results none
+    train_dataset = train_examples.map(tf_encode).filter(
+        filter_max_length).cache().shuffle(BUFFER_SIZE).padded_batch(
+            BATCH_SIZE, padded_shapes=([-1], [-1])).prefetch(AUTOTUNE)
+
+    val_dataset = val_examples.map(tf_encode).filter(
+        filter_max_length).padded_batch(BATCH_SIZE, padded_shapes=([-1], [-1]))
+  #+END_SRC
+
+  #+RESULTS: 879a3848-81de-48d4-8e74-e21a3908a62c
+
+  #+NAME: e41962e3-2e03-47cf-842b-a5fdc95f5750
+  #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+    pt_batch, en_batch = next(iter(val_dataset))
+    pt_batch, en_batch
+  #+END_SRC
+
+  #+RESULTS: e41962e3-2e03-47cf-842b-a5fdc95f5750
+  #+begin_example
+  (<tf.Tensor: id=546958, shape=(64, 40), dtype=int64, numpy=
+   array([[8214, 1259,    5, ...,    0,    0,    0],
+          [8214,  299,   13, ...,    0,    0,    0],
+          [8214,   59,    8, ...,    0,    0,    0],
+          ...,
+          [8214,   95,    3, ...,    0,    0,    0],
+          [8214, 5157,    1, ...,    0,    0,    0],
+          [8214, 4479, 7990, ...,    0,    0,    0]])>,
+   <tf.Tensor: id=546959, shape=(64, 40), dtype=int64, numpy=
+   array([[8087,   18,   12, ...,    0,    0,    0],
+          [8087,  634,   30, ...,    0,    0,    0],
+          [8087,   16,   13, ...,    0,    0,    0],
+          ...,
+          [8087,   12,   20, ...,    0,    0,    0],
+          [8087,   17, 4981, ...,    0,    0,    0],
+          [8087,   12, 5453, ...,    0,    0,    0]])>)
+  #+end_example
+  
+* Positional Encoding
+  ref. https://github.com/tensorflow/examples/blob/master/community/en/position_encoding.ipynb
+
+  The formula is here.
+  
+  \begin{eqnarray*}
+PE_{(pos, 2i)} &= \sin (pos / 10000^{2i / d_{model}})\\
+PE_{(pos, 2i + 1)} &= \cos (pos / 10000^{2i / d_{model}})
+  \end{eqnarray*}
+  
+
+  #+NAME: cef40945-1c23-45cf-a3f7-1d582d8fba0d
+  #+BEGIN_SRC ein-python :session localhost :results none
+    def get_angles(pos, i, d_model):
+        angle_rates = 1 / np.power(1000, (2 * (i // 2)) / np.float32(d_model))
+        return pos * angle_rates
+
+
+    def positional_encoding(position, d_model):
+        angle_rads = get_angles(
+            np.arange(position)[:, np.newaxis],
+            np.arange(d_model)[np.newaxis, :], d_model)
+
+        angle_rads[:, 0::2] = np.sin(angle_rads[:, 0::2])
+        angle_rads[:, 1::2] = np.cos(angle_rads[:, 0::2])
+        pos_encoding = angle_rads[np.newaxis, ...]
+        return tf.cast(pos_encoding, dtype=tf.float32)
+  #+END_SRC
+
+  #+RESULTS: cef40945-1c23-45cf-a3f7-1d582d8fba0d
+
+  #+NAME: f9a162ad-22c7-4216-b566-46e918638ab1
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    pos_encoding = positional_encoding(50, 512)
+    print(pos_encoding.shape)
+    plt.pcolormesh(pos_encoding[0], cmap='RdBu')
+    plt.xlabel('Depth')
+    plt.xlim((0, 512))
+    plt.ylabel('Position')
+    plt.colorbar()
+    plt.show()
+  #+END_SRC
+
+  #+RESULTS: f9a162ad-22c7-4216-b566-46e918638ab1
+  :results:
+  (1, 50, 512)
+
+  [[file:ein-images/ob-ein-229f1022a30ef2728fe3dfe5b2595557.png]]
+  :end:
+  
+  appendix
+  #+NAME: 79ac10a2-e5ad-4973-9ce8-4212a06bdbfb
+  #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+  print(np.arange(10)[:, np.newaxis])
+  print(np.arange(10)[np.newaxis ,:])
+  #+END_SRC
+
+  #+RESULTS: 79ac10a2-e5ad-4973-9ce8-4212a06bdbfb
+  #+begin_example
+  [[0]
+   [1]
+   [2]
+   [3]
+   [4]
+   [5]
+   [6]
+   [7]
+   [8]
+   [9]]
+  [[0 1 2 3 4 5 6 7 8 9]]
+  #+end_example
+  
+* Masking
+  
+  for ignoreing padding in calculation
+  #+NAME: ef053613-4fb5-43a5-aad1-a895970b36ff
+  #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+    def create_padding_mask(seq):
+        seq = tf.cast(tf.math.equal(seq, 0), tf.float32)
+        # (batch_size, 1, 1,  seq_len)
+        return seq[:, tf.newaxis, tf.newaxis, :]
+
+
+    x = tf.constant([[7, 6, 0, 0, 1], [1, 2, 3, 0, 0], [0, 0, 0, 4, 5]])
+    print_infos([x, create_padding_mask(x)])
+  #+END_SRC
+
+  #+RESULTS: ef053613-4fb5-43a5-aad1-a895970b36ff
+  #+begin_example
+  tf.Tensor(
+  [[7 6 0 0 1]
+   [1 2 3 0 0]
+   [0 0 0 4 5]], shape=(3, 5), dtype=int32)
+  tf.Tensor(
+  [[[[0. 0. 1. 1. 0.]]]
+
+
+   [[[0. 0. 0. 1. 1.]]]
+
+
+   [[[1. 1. 1. 0. 0.]]]], shape=(3, 1, 1, 5), dtype=float32)
+  #+end_example
+
+  for ignoreing prediction word (in decoding model)
+  #+NAME: 4bcb02e3-e8ca-42c0-ba70-97b4f55773df
+  #+BEGIN_SRC ein-python :session localhost :results pp  :exports both
+    def create_look_ahead_mask(size):
+        mask = 1 - tf.linalg.band_part(tf.ones((size, size)), -1, 0)
+        return mask
+
+
+    x = tf.random.uniform((1, 3))
+    print_infos([x, create_look_ahead_mask(x.shape[1])])
+  #+END_SRC
+
+  #+RESULTS: 4bcb02e3-e8ca-42c0-ba70-97b4f55773df
+  : tf.Tensor([[0.22582567 0.58736205 0.92260003]], shape=(1, 3), dtype=float32)
+  : tf.Tensor(
+  : [[0. 1. 1.]
+  :  [0. 0. 1.]
+  :  [0. 0. 0.]], shape=(3, 3), dtype=float32)
+
+* Scaled dot product attention
+  [[./scaled_attention.png]]
+
+  Attention formula is here (Q is query, K is key, V is value)
+  
+  \begin{eqnarray*}
+Attention(Q, K, V)=  softmax_k (\cfrac{QK^T}{\sqrt{d_k}})V
+  \end{eqnarray*}
+  
+  #+NAME: d8ac79b6-bdfe-4e3e-8a7b-ef4c82a48739
+  #+BEGIN_SRC ein-python :session localhost :results none
+    def scaled_dot_product_attention(q, k, v, mask):
+        """Calculate the attention weights.
+      q, k, v must have matching leading dimensions.
+      k, v must have matching penultimate dimension, i.e.: seq_len_k = seq_len_v.
+      The mask has different shapes depending on its type(padding or look ahead)
+      but it must be broadcastable for addition.
+
+      q, k, v は次に示される次元である必要があります
+      k, v は 第2次元のサイズを統一されている必要があります (つまり seq_len_k == seq_len_v)
+      マスクは、そのタイプ(padding / look ahead) に応じてサイズが変わります。
+      しかし (... seq_len_q, seq_len_k) へブロードキャストできるようになっていなければなりません
+
+      Args:
+        q: query shape == (..., seq_len_q, depth)
+        k: key shape == (..., seq_len_k, depth)
+        v: value shape == (..., seq_len_v, depth_v)
+        mask: Float tensor with shape broadcastable
+              to (..., seq_len_q, seq_len_k). Defaults to None.
+
+      Returns:
+        output, attention_weights
+      """
+
+        matmul_qk = tf.matmul(q, k,
+                              transpose_b=True)  # (..., seq_len_q, seq_len_k)
+
+        # scale matmul_qk
+        dk = tf.cast(tf.shape(k)[-1], tf.float32)
+        scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
+
+        # add the mask to the scaled tensor
+        if mask is not None:
+            scaled_attention_logits += (mask * -1e9)
+
+        # softmax is normalized on the last axis (seq_len_k) so that the scores
+        # add up to 1
+        attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)
+        # (..., seq_len_q, seq_len_k)
+
+        output = tf.matmul(attention_weights, v)
+        # (..., seq_len_q, depth_v)
+        return output, attention_weights
+  #+END_SRC
+
+  #+RESULTS: d8ac79b6-bdfe-4e3e-8a7b-ef4c82a48739
+
+  #+NAME: 18179ca0-81ef-480b-8f7d-c1f2f58d5314
+  #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+    def print_out(q, k, v):
+        temp_out, temp_attn = scaled_dot_product_attention(q, k, v, None)
+        print_infos(['Attention weights are:', temp_attn, 'Output is:', temp_out])
+
+
+    np.set_printoptions(suppress=True)
+    temp_k = tf.constant([[10, 0, 0], [0, 10, 0], [0, 0, 10], [0, 0, 10]],
+                         dtype=tf.float32)  # (4, 3)
+    temp_v = tf.constant([[1, 0], [10, 0], [100, 5], [1000, 6]],
+                         dtype=tf.float32)  #(4, 2)
+
+    # この qruery は 2 番目の key と一致するので、2番めの value が返されます。
+    # => v[k.search(query)]
+    temp_q = tf.constant([[0, 10, 0]], dtype=tf.float32)  # (1, 3)
+    print_out(temp_q, temp_k, temp_v)
+    print()
+
+    # この query は 3, 4 番目の key と一致するので、3,  4 番目の value の平均値が返されます。
+    temp_q = tf.constant([[0, 0, 10]], dtype=tf.float32)  # (1, 3)
+    print_out(temp_q, temp_k, temp_v)
+
+    # この query は 1, 2 番目の key と一致するので、1, 2 番目の value の平均値が返されます。
+    temp_q = tf.constant([[10, 10, 0]], dtype=tf.float32)  # (1, 3)
+    print_out(temp_q, temp_k, temp_v)
+  #+END_SRC
+
+  #+RESULTS: 18179ca0-81ef-480b-8f7d-c1f2f58d5314
+  #+begin_example
+  Attention weights are:
+  tf.Tensor([[0. 1. 0. 0.]], shape=(1, 4), dtype=float32)
+  Output is:
+  tf.Tensor([[10.  0.]], shape=(1, 2), dtype=float32)
+
+  Attention weights are:
+  tf.Tensor([[0.  0.  0.5 0.5]], shape=(1, 4), dtype=float32)
+  Output is:
+  tf.Tensor([[550.    5.5]], shape=(1, 2), dtype=float32)
+  Attention weights are:
+  tf.Tensor([[0.5 0.5 0.  0. ]], shape=(1, 4), dtype=float32)
+  Output is:
+  tf.Tensor([[5.5 0. ]], shape=(1, 2), dtype=float32)
+  #+end_example
+
+  #+NAME: 418751b0-6e47-4b80-a67f-d67a9ad4a2d8
+  #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+    # 上の query をすべて行列にまとめて実行すると次のようになります。
+    temp_q = tf.constant([[0, 0, 10], [0, 10, 0], [10, 10, 0]],
+                         dtype=tf.float32)  # (3, 3)
+    print_out(temp_q, temp_k, temp_v)
+  #+END_SRC
+
+  #+RESULTS: 418751b0-6e47-4b80-a67f-d67a9ad4a2d8
+  #+begin_example
+  Attention weights are:
+  tf.Tensor(
+  [[0.  0.  0.5 0.5]
+   [0.  1.  0.  0. ]
+   [0.5 0.5 0.  0. ]], shape=(3, 4), dtype=float32)
+  Output is:
+  tf.Tensor(
+  [[550.    5.5]
+   [ 10.    0. ]
+   [  5.5   0. ]], shape=(3, 2), dtype=float32)
+  #+end_example
+
+* Multi-head attention
+  [[./multi_head_attention.png]]
+  
+  Multi head Attention はの 4 つのパートから構成されます。
+  - Linear layer と 複数の head への分割
+  - Scaled dot-product attention
+  - heads の集約
+  - final linear layer
+    
+#+NAME: 0e54b5f2-ca24-4df6-b9c5-fa7a21956ee9
+#+BEGIN_SRC ein-python :session localhost :results none
+  class MultiHeadAttention(layers.Layer):
+      def __init__(self, d_model, num_heads):
+          super(MultiHeadAttention, self).__init__()
+          self.num_heads = num_heads
+          self.d_model = d_model
+
+          assert d_model % self.num_heads == 0
+
+          self.depth = d_model // self.num_heads
+
+          self.wq = layers.Dense(d_model)
+          self.wk = layers.Dense(d_model)
+          self.wv = layers.Dense(d_model)
+
+          self.dense = layers.Dense(d_model)
+
+      def split_heads(self, x, batch_size):
+          """Split the last dimension into (num_heads, depth).
+          Transpose the result such that the shape is (batch_size, num_heads, seq_len, depth)
+
+          最後の次元である d_model を (num_heads, depth) へ分割します。
+          また出力時には
+          (batch_size, seq_len, num_heads, depth) -> (batch_size, num_heads, seq_len, depth) します。
+
+          つまり
+          (batch_size, seq_len, d_model)
+          -> (batch_size, seq_len, num_heads, depth) (次元分割)
+          -> (batch_size, num_heads, seq_len, depth) (軸入れ替え)
+          """
+          x = tf.reshape(x, (batch_size, -1, self.num_heads, self.depth))
+          return tf.transpose(x, perm=[0, 2, 1, 3])
+
+      def call(self, v, k, q, mask):
+          batch_size = tf.shape(q)[0]
+
+          q = self.wq(q)  # (..., seq_len, d_model)
+          k = self.wk(k)  # (..., seq_len, d_model)
+          v = self.wv(v)  # (..., seq_len, d_model)
+
+          q = self.split_heads(
+              q, batch_size)  # (batch_size, num_heads, seq_len_q, depth)
+          k = self.split_heads(
+              k, batch_size)  # (batch_size, num_heads, seq_len_k, depth)
+          v = self.split_heads(
+              v, batch_size)  # (batch_size, num_heads, seq_len_v, depth)
+
+          # scaled_attention.shape == (batch_size, num_heads, seq_len_q, depth)
+          # attention_weights.shape == (batch_size, num_heads, seq_len_q, seq_len_k)
+          scaled_attention, attention_weights = scaled_dot_product_attention(
+              q, k, v, mask)
+
+          # (batch_size, seq_len_q, num_heads, depth)
+          scaled_attention = tf.transpose(scaled_attention, perm=[0, 2, 1, 3])
+
+          concat_attention = tf.reshape(
+              scaled_attention,
+              (batch_size, -1, self.d_model))  # (batch_size, seq_len_q, d_model)
+
+          output = self.dense(
+              concat_attention)  # (batch_size, seq_len_q, d_model)
+
+          return output, attention_weights
+    #+END_SRC
+
+    #+RESULTS: 0e54b5f2-ca24-4df6-b9c5-fa7a21956ee9
+
+    #+NAME: 80654ed5-4a69-41f0-9735-be190e352f2e
+    #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+      temp_mha = MultiHeadAttention(d_model=512, num_heads=8)
+      y = tf.random.uniform((1, 60, 512))  # (batch_size, encoder_sequence, d_model)
+      out, attn = temp_mha(y, k=y, q=y, mask=None)
+      out.shape, attn.shape
+    #+END_SRC
+
+    #+RESULTS: 80654ed5-4a69-41f0-9735-be190e352f2e
+    : (TensorShape([1, 60, 512]), TensorShape([1, 8, 60, 60]))
+
+* Point wise feed forward network
+  #+NAME: c49a732c-b12e-4ecb-9c23-e4a75b19a46c
+  #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+    def point_wise_feed_forward_network(d_model, dff):
+        return Sequential(
+            [layers.Dense(dff, activation='relu'),
+             layers.Dense(d_model)])
+
+
+    sample_ffn = point_wise_feed_forward_network(512, 2048)
+    sample_ffn(tf.random.uniform((64, 50, 512))).shape
+  #+END_SRC
+
+  #+RESULTS: c49a732c-b12e-4ecb-9c23-e4a75b19a46c
+  : TensorShape([64, 50, 512])
+  
+* Encoder and Decoder
+  [[./transformer.png]]
+** Encoder Layer
+   #+NAME: b7e67ae4-b6a6-483c-a178-3b2e3d3a8d80
+   #+BEGIN_SRC ein-python :session localhost :results none
+     class EncoderLayer(layers.Layer):
+         def __init__(self, d_model, num_heads, dff, rate=0.1):
+             super(EncoderLayer, self).__init__()
+             self.mha = MultiHeadAttention(d_model, num_heads)
+             self.layer_norm1 = layers.LayerNormalization(epsilon=1e-6)
+
+             self.ffn = point_wise_feed_forward_network(d_model, dff)
+             self.layer_norm2 = layers.LayerNormalization(epsilon=1e-6)
+
+             self.dropout1 = layers.Dropout(rate)
+             self.dropout2 = layers.Dropout(rate)
+
+         def call(self, x, training, padding_mask):
+             # (..., input_seq_len, d_model)
+             attn_output, _ = self.mha(x, x, x, padding_mask)
+             attn_output = self.dropout1(attn_output, training=training)
+             # (..., input_seq_len, d_model)
+             out1 = self.layer_norm1(x + attn_output)
+
+             # (..., input_seq_len, d_model)
+             ffn_output = self.ffn(out1)
+             ffn_output = self.dropout2(ffn_output, training=training)
+             # (..., input_seq_len, d_model)
+             out2 = self.layer_norm2(out1 + ffn_output)
+
+             return out2
+   #+END_SRC
+
+   #+RESULTS: b7e67ae4-b6a6-483c-a178-3b2e3d3a8d80
+
+   
+   #+NAME: 916ba9a2-73a4-46a5-b355-5bf522fe635a
+   #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+     sample_encoder_layer = EncoderLayer(d_model=512, num_heads=8, dff=2048)
+     sample_encoder_layer_output = sample_encoder_layer(
+         tf.random.uniform((64, 42, 512)), False, None)
+     sample_encoder_layer_output.shape
+   #+END_SRC
+
+   #+RESULTS: 916ba9a2-73a4-46a5-b355-5bf522fe635a
+   : TensorShape([64, 42, 512])
+
+** Decoder Layer
+   #+NAME: 5459be27-4367-4b21-aabe-813d324e11ad
+   #+BEGIN_SRC ein-python :session localhost :results none
+     class DecoderLayer(layers.Layer):
+         def __init__(self, d_model, num_heads, dff, rate=0.1):
+             super(DecoderLayer, self).__init__()
+
+             self.mha1 = MultiHeadAttention(d_model, num_heads)
+             self.layernorm1 = layers.LayerNormalization(epsilon=1e-6)
+
+             self.mha2 = MultiHeadAttention(d_model, num_heads)
+             self.layernorm2 = layers.LayerNormalization(epsilon=1e-6)
+
+             self.ffn = point_wise_feed_forward_network(d_model, dff)
+             self.layernorm3 = layers.LayerNormalization(epsilon=1e-6)
+
+             self.dropout1 = layers.Dropout(rate)
+             self.dropout2 = layers.Dropout(rate)
+             self.dropout3 = layers.Dropout(rate)
+
+         def call(self, x, enc_output, training, look_ahead_mask, padding_mask):
+                 # enc_output.shape == (..., input_seq_len, d_model)
+
+                 #(..., target_seq_len, d_model)
+                 attn1, attn_weights_block1 = self.mha1(x, x, x, look_ahead_mask)
+                 attn1 = self.dropout1(attn1, training=training)
+                 out1 = self.layernorm1(attn1 + x)
+
+                 #(..., target_seq_len, d_model)
+                 # これは 'self attention algorithm'
+                 #      v = enc_output, k=enc_output,  q=x
+                 #      => enc_output でできた v, k に query out1 でアクセスする
+                 attn2, attn_weights_block2 = self.mha2(enc_output, enc_output, out1,
+                                                        padding_mask)
+                 attn2 = self.dropout1(attn2, training=training)
+                 out2 = self.layernorm1(attn2 + out1)
+                 
+                 # (batch_size, target_seq_len, d_model)
+                 ffn_output = self.ffn(out2)  
+                 ffn_output = self.dropout3(
+                     ffn_output,
+                     training=training)  # (batch_size, target_seq_len, d_model)
+                 out3 = self.layernorm3(ffn_output + out2)
+
+                 return out3, attn_weights_block1, attn_weights_block2
+   #+END_SRC
+
+   #+RESULTS: 5459be27-4367-4b21-aabe-813d324e11ad
+
+   #+NAME: eace575d-5296-4845-8d8d-bc57d2a52d05
+   #+BEGIN_SRC ein-python :session localhost :results pp :exports both 
+     sample_decoder_layer = DecoderLayer(512, 8, 2048)
+     sample_decoder_layer_output, _, _ = sample_decoder_layer(
+         tf.random.uniform((64, 50, 512)), sample_encoder_layer_output, False, None,
+         None)
+
+     sample_decoder_layer_output.shape
+   #+END_SRC
+
+   #+RESULTS: eace575d-5296-4845-8d8d-bc57d2a52d05
+   : TensorShape([64, 50, 512])
+
+** Encoder
+   #+NAME: e8d6f10a-b504-4fc2-aa00-821f8234e4f2
+   #+BEGIN_SRC ein-python :session localhost :results none
+     class Encoder(layers.Layer):
+         def __init__(self,
+                      num_layers,
+                      d_model,
+                      num_heads,
+                      dff,
+                      input_vocab_size,
+                      rate=0.1):
+             super(Encoder, self).__init__()
+             self.d_model = d_model
+             self.num_layers = num_layers
+             self.embedng = layers.Embedding(input_vocab_size, self.d_model)
+
+             # assumption: input_vocab_size > seq_len
+             self.pos_encoding = positional_encoding(input_vocab_size, self.d_model)
+             self.enc_layers = [
+                 EncoderLayer(d_model, num_heads, dff, rate)
+                 for _ in range(num_layers)
+             ]
+             self.dropout = layers.Dropout(rate)
+
+         def call(self, x, training, mask):
+             # x.shape == (..., seq_len)
+             seq_len = tf.shape(x)[1]
+
+             # (batch_size, input_seq_len, d_model)
+             x = self.embedng(x)
+             x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
+             x += self.pos_encoding[:, :seq_len, :]
+
+             self.dropout(x, training=training)
+
+             for i in range(self.num_layers):
+                 x = self.enc_layers[i](x, training, mask)
+
+             # (batch_size,  input_seq_len, d_model)
+             return x
+   #+END_SRC
+
+   #+RESULTS: e8d6f10a-b504-4fc2-aa00-821f8234e4f2
+
+   #+NAME: ffc723ca-b97f-4875-ac93-dc3e4018b027
+   #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+     sample_encoder = Encoder(num_layers=2,
+                              d_model=512,
+                              num_heads=8,
+                              dff=2048,
+                              input_vocab_size=8500)
+     sample_encoder_output = sample_encoder(tf.random.uniform((64, 62)),
+                                            training=False,
+                                            mask=None)
+
+     # (batch_size, input_seq_len, d_model)
+     print(sample_encoder_output.shape)
+   #+END_SRC
+
+   #+RESULTS: ffc723ca-b97f-4875-ac93-dc3e4018b027
+   : (64, 62, 512)
+
+** Decoder
+   #+NAME: e96d0af5-3c37-41e9-9ee5-da679d7f6aa1
+   #+BEGIN_SRC ein-python :session localhost :results none
+     class Decoder(layers.Layer):
+         def __init__(self,
+                      num_layers,
+                      d_model,
+                      num_heads,
+                      dff,
+                      target_vocab_size,
+                      rate=0.1):
+             super(Decoder, self).__init__()
+             self.d_model = d_model
+             self.num_layers = num_layers
+             self.embedding = layers.Embedding(target_vocab_size, d_model)
+
+             # assumption: target_vocab_size > seq_len
+             self.pos_encoding = positional_encoding(target_vocab_size, d_model)
+             self.dec_layers = [
+                 DecoderLayer(d_model, num_heads, dff, rate)
+                 for _ in range(num_layers)
+             ]
+             self.dropout = layers.Dropout(rate)
+
+         def call(self, x, enc_output, training, look_ahead_mask, padding_mask):
+             seq_len = tf.shape(x)[1]
+             attention_weights = {}
+             # (batch_size, target_seq_len, d_model)
+             x = self.embedding(x)
+             x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
+             x += self.pos_encoding[:, :seq_len, :]
+
+             x = self.dropout(x, training=training)
+             for i in range(self.num_layers):
+                 x, block1, block2 = self.dec_layers[i](x, enc_output, training,
+                                                        look_ahead_mask,
+                                                        padding_mask)
+
+                 attention_weights['decoder_layer{}_block1'.format(i + 1)] = block1
+                 attention_weights['decoder_layer{}_block2'.format(i + 1)] = block2
+
+             # x.shape == (batch_size, target_seq_len, d_model)
+             return x, attention_weights
+   #+END_SRC
+
+   #+RESULTS: e96d0af5-3c37-41e9-9ee5-da679d7f6aa1
+   
+#+NAME: 58b0015e-f350-4bc4-a347-9aaa04aae314
+#+BEGIN_SRC ein-python :session localhost :results pp :exports both
+  sample_decoder = Decoder(num_layers=2,
+                           d_model=512,
+                           num_heads=8,
+                           dff=2048,
+                           target_vocab_size=8000)
+
+  output, attn = sample_decoder(tf.random.uniform((64, 26)),
+                                enc_output=sample_encoder_output,
+                                training=False,
+                                look_ahead_mask=None,
+                                padding_mask=None)
+
+  output.shape, attn['decoder_layer2_block2'].shape
+   #+END_SRC
+
+   #+RESULTS: 58b0015e-f350-4bc4-a347-9aaa04aae314
+   : (TensorShape([64, 26, 512]), TensorShape([64, 8, 26, 62]))
+
+* Create the Transformer
+  #+NAME: dc550718-7623-4f24-8730-33a632cc74f6
+  #+BEGIN_SRC ein-python :session localhost :results none
+    class Transformer(keras.Model):
+        def __init__(self,
+                     num_layers,
+                     d_model,
+                     num_heads,
+                     dff,
+                     input_vocab_size,
+                     target_vocab_size,
+                     rate=0.1):
+            super(Transformer, self).__init__()
+            self.encoder = Encoder(num_layers, d_model, num_heads, dff,
+                                   input_vocab_size, rate)
+
+            self.decoder = Decoder(num_layers, d_model, num_heads, dff,
+                                   target_vocab_size, rate)
+            self.final_layer = layers.Dense(target_vocab_size)
+
+        def call(self, inp, tar, training, enc_padding_mask, look_ahead_mask,
+                 dec_padding_mask):
+            # inp.shape ==  (batch_size, tar_seq_len, target_vocab_size)
+
+            # (batch_size, tar_seq_len, target_vocab_size)
+            enc_output = self.encoder(inp, training, enc_padding_mask)
+
+            # dec_output.shape == (batch_size, tar_seq_len, d_model)
+            dec_output, attention_weights = self.decoder(tar, enc_output, training,
+                                                         look_ahead_mask,
+                                                         dec_padding_mask)
+            # (batch_size, tar_seq_len, target_vocab_size)
+            final_output = self.final_layer(dec_output)
+            return final_output, attention_weights
+  #+END_SRC
+
+  #+RESULTS: dc550718-7623-4f24-8730-33a632cc74f6
+
+  #+NAME: 701a5d84-e0e5-4e31-8ea5-a153f7046c3f
+  #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+    sample_transformer = Transformer(num_layers=2,
+                                     d_model=512,
+                                     num_heads=8,
+                                     dff=2048,
+                                     input_vocab_size=8500,
+                                     target_vocab_size=8000)
+
+    temp_input = tf.random.uniform((64, 62))
+    temp_target = tf.random.uniform((64, 26))
+
+    fn_out, _ = sample_transformer(temp_input,
+                                   temp_target,
+                                   training=False,
+                                   enc_padding_mask=None,
+                                   look_ahead_mask=None,
+                                   dec_padding_mask=None)
+
+    # (batch_size, tar_seq_len, target_vocab_size)
+    fn_out.shape
+  #+END_SRC
+
+  #+RESULTS: 701a5d84-e0e5-4e31-8ea5-a153f7046c3f
+  : TensorShape([64, 26, 8000])
+
+* Set hyperparameters
+  #+NAME: a1738819-881c-487f-9611-282c389b99fd
+  #+BEGIN_SRC ein-python :session localhost :results none
+    num_layers = 4
+    d_model = 128
+    dff = 512
+    num_heads = 8
+
+    input_vocab_size = tokenizer_pt.vocab_size + 2
+    target_vocab_size = tokenizer_en.vocab_size + 2
+    dropout_rate = 0.1
+  #+END_SRC
+
+  #+RESULTS: a1738819-881c-487f-9611-282c389b99fd
+
+* Optimizer
+  custom Adam optimizer ref. https://arxiv.org/abs/1706.03762 (Attention is All You Need)
+  This formula is here.
+  
+  \begin{eqnarray*}
+  lrate = d_{model}^{-0.5} * min (step\_num^{-0.5}, step\_num * warmup\_steps ^{-1.5})
+  \end{eqnarray*}
+  #+NAME: 6039dc4d-fbee-4f4a-a916-d9ed4865cfe7
+  #+BEGIN_SRC ein-python :session localhost :results none
+    class CustomSchedule(keras.optimizers.schedules.LearningRateSchedule):
+        def __init__(self, d_model, warmup_steps=4000):
+            super(CustomSchedule, self).__init__()
+            self.d_model = d_model
+            self.d_model = tf.cast(self.d_model, tf.float32)
+            self.warmup_steps = warmup_steps
+
+        def __call__(self, step):
+            arg1 = step**-0.5
+            arg2 = step * (self.warmup_steps**-1.5)
+            return (self.d_model**-0.5) * tf.math.minimum(arg1, arg2)
+  #+END_SRC
+
+  #+RESULTS: 6039dc4d-fbee-4f4a-a916-d9ed4865cfe7
+
+  #+NAME: 6a12b5dd-4480-4f62-bb15-f2b82afc5b33
+  #+BEGIN_SRC ein-python :session localhost :results none
+    learning_rate = CustomSchedule(d_model)
+    optimizer = keras.optimizers.Adam(learning_rate,
+                                      beta_1=0.9,
+                                      beta_2=0.98,
+                                      epsilon=1e-9)
+  #+END_SRC
+
+  #+RESULTS: 6a12b5dd-4480-4f62-bb15-f2b82afc5b33
+
+  #+NAME: fbfe1bcd-9e38-4121-855d-cc8ac216bfba
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    temp_learning_rate_schedule = CustomSchedule(d_model)
+    plt.plot(temp_learning_rate_schedule(tf.range(40000, dtype=tf.float32)))
+    plt.ylabel('Learning Rate')
+    plt.xlabel('Train Step')
+  #+END_SRC
+
+  #+RESULTS: fbfe1bcd-9e38-4121-855d-cc8ac216bfba
+  :results:
+  Text(0.5, 0, 'Train Step')
+  [[file:ein-images/ob-ein-3808ec53d2bffbcfb4981ff08ff64dc2.png]]
+  :end:
+
+* Loss and metrics
+  #+NAME: 00f74e0d-cf27-46f8-8b58-28511a21e8f0
+  #+BEGIN_SRC ein-python :session localhost :results none
+    loss_object = keras.losses.SparseCategoricalCrossentropy(from_logits=True,
+                                                             reduction='none')
+
+
+    def loss_function(real, pred):
+        # 0 == padding
+        mask = tf.math.logical_not(tf.math.equal(real, 0))
+        loss_ = loss_object(real, pred)
+
+        mask = tf.cast(mask, dtype=loss_.dtype)
+        loss_ *= mask
+        return tf.reduce_mean(loss_)
+
+
+    train_loss = keras.metrics.Mean(name='train_loss')
+    train_acc = keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
+  #+END_SRC
+
+  #+RESULTS: 00f74e0d-cf27-46f8-8b58-28511a21e8f0
+
+* Training and checkpointing
+  #+NAME: 3e261d2b-cb60-47a0-bdf3-583ab6ef16a2
+  #+BEGIN_SRC ein-python :session localhost :results none
+    transformer = Transformer(num_layers, d_model, num_heads, dff,
+                              input_vocab_size, target_vocab_size, dropout_rate)
+  #+END_SRC
+
+  #+RESULTS: 3e261d2b-cb60-47a0-bdf3-583ab6ef16a2
+
+  #+NAME: 13f85d87-29ce-4bbf-97cd-7c802a09ec5c
+  #+BEGIN_SRC ein-python :session localhost :results none
+    def create_masks(inp, tar):
+        # Encoder padding mask
+        enc_padding_mask = create_padding_mask(inp)
+
+        # Used in the 2nd attention block in the decoder.
+        # This padding mask is used to mask the encoder outputs.
+        dec_padding_mask = create_padding_mask(inp)
+
+        # Used in the 1st attention block in the decoder.
+        # It is used to pad and mask future tokens in the input received
+        # by the decoder.
+        look_ahead_mask = create_look_ahead_mask(tf.shape(tar)[1])
+        dec_target_padding_mask = create_padding_mask(tar)
+        combined_mask = tf.maximum(dec_target_padding_mask, look_ahead_mask)
+
+        return enc_padding_mask, combined_mask, dec_padding_mask
+  #+END_SRC
+
+  #+RESULTS: 13f85d87-29ce-4bbf-97cd-7c802a09ec5c
+
+  
+  #+NAME: 9319df05-57e8-4e68-a2da-faf4a6cdeaa3
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    checkpoint_path = "./checkpoints/train"
+
+    ckpt = tf.train.Checkpoint(transformer=transformer, optimizer=optimizer)
+    ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=5)
+
+    # if a checkpoint exists, restore the latest checkpoint.
+    if ckpt_manager.latest_checkpoint:
+        ckpt.restore(ckpt_manager.latest_checkpoint)
+        print('Latest checkpoint restored!!')
+  #+END_SRC
+
+  #+RESULTS: 9319df05-57e8-4e68-a2da-faf4a6cdeaa3
+  :results:
+  :end:
+  
+
+  #+NAME: 3d7c0295-5307-442d-a8d9-aefb2b09d728
+  #+BEGIN_SRC ein-python :session localhost :results none
+    EPOCHS = 20
+    train_step_signature = [
+        tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+        tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+    ]
+
+    @tf.function(input_signature=train_step_signature)
+    def train_step(inp, tar):
+        tar_inp = tar[:, :-1]
+        tar_real = tar[:, 1:]
+
+        enc_padding_mask, combined_mask, dec_padding_mask = create_masks(
+            inp, tar_inp)
+
+        with tf.GradientTape() as tape:
+            predictions, _ = transformer(inp, tar_inp, True, enc_padding_mask,
+                                         combined_mask, dec_padding_mask)
+            loss = loss_function(tar_real, predictions)
+
+        gradients = tape.gradient(loss, transformer.trainable_variables)
+        optimizer.apply_gradients(zip(gradients, transformer.trainable_variables))
+
+        train_loss(loss)
+        train_acc(tar_real, predictions)
+  #+END_SRC
+
+  #+RESULTS: 3d7c0295-5307-442d-a8d9-aefb2b09d728
+
+  #+NAME: ebb0b6f6-b2ec-454d-b50b-e386c83c7e15
+  #+BEGIN_SRC ein-python :session localhost :results none
+    # trainining
+    for epoch in range(EPOCHS):
+        start = time.time()
+        train_loss.reset_states()
+        train_acc.reset_states()
+        # inp -> portuguess, tar -> english
+        for (batch, (inp, tar)) in enumerate(train_dataset):
+            train_step(inp, tar)
+            if batch % 50 == 0:
+                print('Epoch {} Batch {} Loss {:.4f} Acc {:.4f}'.format(
+                    epoch + 1, batch, train_loss.result(), train_acc.result()))
+        if (epoch + 1) % 5 == 0:
+            ckpt_save_path = ckpt_manager.save()
+            print('Saving checkpoint for epoch {} at {}'.format(
+                epoch + 1, ckpt_save_path))
+            print('Epoch {} Loss {:.4f} Accuracy {:.4f}'.format(
+                epoch + 1, train_loss.result(), train_acc.result()))
+            print('Time taken for 1 epoch: {} secs\n'.format(time.time() -
+                                                             start))
+  #+END_SRC
+
+  #+RESULTS: ebb0b6f6-b2ec-454d-b50b-e386c83c7e15
+  
+  Epoch 20 Batch 700 Loss 0.4377 Acc 0.3641
+Saving checkpoint for epoch 20 at ./checkpoints/train/ckpt-4
+Epoch 20 Loss 0.4379 Accuracy 0.3641
+Time taken for 1 epoch: 229.03856348991394 secs
+
+* Evaluation
+#+NAME: 6406b5b6-fbf3-43b4-9870-8278fb85126f
+#+BEGIN_SRC ein-python :session localhost :results pp
+  def evaluate(inp_sentence):
+      start_token = [tokenizer_pt.vocab_size]
+      end_token = [tokenizer_pt.vocab_size + 1]
+
+      # inp sentence is portuguese, hence adding the start and end token
+      inp_sentence = start_token + tokenizer_pt.encode(inp_sentence) + end_token
+      encoder_input = tf.expand_dims(inp_sentence, 0)
+
+      # as the target is english, the first word to the transformer should be the
+      # english start token.
+      decoder_input = [tokenizer_en.vocab_size]
+      output = tf.expand_dims(decoder_input, 0)
+
+      for i in range(MAX_LENGTH):
+          enc_padding_mask, combined_mask, dec_padding_mask = create_masks(
+              encoder_input, output)
+
+          # predictions.shape == (batch_size, seq_len, vocab_size)
+          predictions, attention_weights = transformer(encoder_input, output,
+                                                       False, enc_padding_mask,
+                                                       combined_mask,
+                                                       dec_padding_mask)
+
+          # select the last word from the seq_len dimension
+          predictions = predictions[:, -1:, :]  # (batch_size, 1, vocab_size)
+
+          predicted_id = tf.cast(tf.argmax(predictions, axis=-1), tf.int32)
+
+          # return the result if the predicted_id is equal to the end token
+          if predicted_id == tokenizer_en.vocab_size + 1:
+              return tf.squeeze(output, axis=0), attention_weights
+
+          # concatentate the predicted_id to the output which is given to the decoder
+          # as its input.
+          output = tf.concat([output, predicted_id], axis=-1)
+
+      return tf.squeeze(output, axis=0), attention_weights
+#+END_SRC
+
+#+RESULTS: 6406b5b6-fbf3-43b4-9870-8278fb85126f
+
+#+NAME: 5829ed23-c113-484f-bb28-ee7b3537259a
+#+BEGIN_SRC ein-python :session localhost :results none
+  def plot_attention_weights(attention, sentence, result, layer):
+      fig = plt.figure(figsize=(16, 8))
+
+      sentence = tokenizer_pt.encode(sentence)
+
+      attention = tf.squeeze(attention[layer], axis=0)
+
+      for head in range(attention.shape[0]):
+          ax = fig.add_subplot(2, 4, head + 1)
+
+          # plot the attention weights
+          ax.matshow(attention[head][:-1, :], cmap='viridis')
+
+          fontdict = {'fontsize': 10}
+
+          ax.set_xticks(range(len(sentence) + 2))
+          ax.set_yticks(range(len(result)))
+
+          ax.set_ylim(len(result) - 1.5, -0.5)
+
+          ax.set_xticklabels(['<start>'] +
+                             [tokenizer_pt.decode([i])
+                              for i in sentence] + ['<end>'],
+                             fontdict=fontdict,
+                             rotation=90)
+
+          ax.set_yticklabels([
+              tokenizer_en.decode([i])
+              for i in result if i < tokenizer_en.vocab_size
+          ],
+                             fontdict=fontdict)
+
+          ax.set_xlabel('Head {}'.format(head + 1))
+
+      plt.tight_layout()
+      plt.show()
+#+END_SRC
+
+#+RESULTS: 5829ed23-c113-484f-bb28-ee7b3537259a
+
+#+NAME: 5a262d06-def9-4cc3-a4a3-240d2d9828a2
+#+BEGIN_SRC ein-python :session localhost :results none
+  def translate(sentence, plot=''):
+      result, attention_weights = evaluate(sentence)
+
+      predicted_sentence = tokenizer_en.decode(
+          [i for i in result if i < tokenizer_en.vocab_size])
+
+      print('Input: {}'.format(sentence))
+      print('Predicted translation: {}'.format(predicted_sentence))
+
+      if plot:
+          plot_attention_weights(attention_weights, sentence, result, plot)
+#+END_SRC
+
+#+RESULTS: 5a262d06-def9-4cc3-a4a3-240d2d9828a2
+
+decoder layer's multi-head attention (num\_heads == 8)
+#+NAME: 088f59bc-3ee7-41bc-8bc0-861303bdb807
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  translate("este é o primeiro livro que eu fiz.", plot='decoder_layer4_block2')
+  print("Real translation: this is the first book i've ever done.")
+#+END_SRC
+
+#+RESULTS: 088f59bc-3ee7-41bc-8bc0-861303bdb807
+:results:
+Input: este é o primeiro livro que eu fiz.
+Predicted translation: this is the first book i did n't get to be done at the world .
+
+[[file:ein-images/ob-ein-52be5222a8b499991189eb7a88fb7686.png]]
+Real translation: this is the first book i've ever done.
+:end:

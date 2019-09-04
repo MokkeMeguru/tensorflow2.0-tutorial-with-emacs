@@ -1,0 +1,198 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: Tensors and Operations
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+      # from tensorflow_examples.models.pix2pix import pix2pix
+
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      from tensorflow.keras.models import Sequential
+      # import tensorflow_text as text
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      # import pathlib
+      # import random
+      # import IPython.display as display
+      # from IPython.display import clear_output
+      # import PIL.Image as Image
+      # import urllib3
+      # import io
+      import tempfile
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+          # '{:25}: {}'.format("tensorflow\'s version", hub.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+      # urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+
+* Tensors
+  #+NAME: e6fd668a-d79c-40da-b674-bda71b85bb30
+  #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+    x = tf.matmul([[1]], [[2, 3]])
+
+    print_infos([
+        'tf.Tensor has some attr', 'identity: {}'.format(x),
+        '.shape: {}'.format(x.shape), '.dtype: {}'.format(x.dtype), '',
+        'some operators', 'add: {}'.format(tf.add(1, 2)),
+        'add matrix: {}'.format(tf.add([1, 2],
+                                       [3, 4])), 'square: {}'.format(tf.square(5)),
+        'reduce_sum: {}'.format(tf.reduce_sum([1, 2, 3])), '',
+        'operation overrding', '{}'.format(tf.square(2) + tf.square(3))
+    ])
+  #+END_SRC
+
+  #+RESULTS: e6fd668a-d79c-40da-b674-bda71b85bb30
+  #+begin_example
+  tf.Tensor has some attr
+  identity: [[2 3]]
+  .shape: (1, 2)
+  .dtype: <dtype: 'int32'>
+
+  some operators
+  add: 3
+  add matrix: [4 6]
+  square: 25
+  reduce_sum: 6
+
+  operation overrding
+  13
+  #+end_example
+
+** Numpy <-> Tensor
+   #+NAME: d23fc928-5743-4482-9a3b-bed0983d5808
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     ndarray = np.ones([3, 3])
+     tensorarray = tf.multiply(ndarray, 42)
+
+
+     print_infos([
+         'original',
+         ndarray,
+         '\nnp -> Tensor',
+         tensorarray,
+         '\nTenor -> np',
+         tensorarray.numpy()
+     ])
+   #+END_SRC
+
+   #+RESULTS: d23fc928-5743-4482-9a3b-bed0983d5808
+   :results:
+   original
+   [[1. 1. 1.]
+    [1. 1. 1.]
+    [1. 1. 1.]]
+
+   np -> Tensor
+   tf.Tensor(
+   [[42. 42. 42.]
+    [42. 42. 42.]
+    [42. 42. 42.]], shape=(3, 3), dtype=float64)
+
+   Tenor -> np
+   [[42. 42. 42.]
+    [42. 42. 42.]
+    [42. 42. 42.]]
+   :end:
+* Datasets 
+  #+NAME: 17cf2f9f-d2de-45be-bba3-2023cf941a13
+  #+BEGIN_SRC ein-python :session localhost :results none
+    ds_tensors = tf.data.Dataset.from_tensor_slices([1, 2, 3, 4, 5, 6])
+    _, filename = tempfile.mkstemp()
+
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write("""Line 1
+        Line 2
+        Line 3""")
+
+    ds_file = tf.data.TextLineDataset(filename)
+  #+END_SRC
+
+  #+RESULTS: 17cf2f9f-d2de-45be-bba3-2023cf941a13
+** Apply transformations 
+   Notice : map  functions is wrapped by ~@tf.function~
+  #+NAME: 3d96004e-71e8-4ba2-b266-7703ec92d1fe
+  #+BEGIN_SRC ein-python :session localhost :results none
+    ds_tensors = ds_tensors.map(tf.square).shuffle(2).batch(2)
+    ds_file = ds_file.batch(2)
+  #+END_SRC
+
+  #+RESULTS: 3d96004e-71e8-4ba2-b266-7703ec92d1fe
+** Iterate
+  #+NAME: 0fd0f882-65f5-45a5-963d-fd6b602a6b36
+  #+BEGIN_SRC ein-python :session localhost :results output :exports both
+    print_infos([
+        'Elements of ds_tensors: ', [x for x in ds_tensors],
+        '\nElements of ds_file:', [x for x in ds_file]
+    ])
+  #+END_SRC
+
+  #+RESULTS: 0fd0f882-65f5-45a5-963d-fd6b602a6b36
+  : Elements of ds_tensors: 
+  : [<tf.Tensor: id=757, shape=(2,), dtype=int32, numpy=array([4, 9], dtype=int32)>, <tf.Tensor: id=758, shape=(2,), dtype=int32, numpy=array([ 1, 25], dtype=int32)>, <tf.Tensor: id=759, shape=(2,), dtype=int32, numpy=array([36, 16], dtype=int32)>]
+  : 
+  : Elements of ds_file:
+  : [<tf.Tensor: id=765, shape=(2,), dtype=string, numpy=array([b'Line 1', b'    Line 2'], dtype=object)>, <tf.Tensor: id=766, shape=(1,), dtype=string, numpy=array([b'    Line 3'], dtype=object)>]

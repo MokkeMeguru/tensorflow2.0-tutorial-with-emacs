@@ -1,0 +1,197 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: Tensors and Operations
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+      # from tensorflow_examples.models.pix2pix import pix2pix
+
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      from tensorflow.keras.models import Sequential
+      # import tensorflow_text as text
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      # import pathlib
+      # import random
+      # import IPython.display as display
+      # from IPython.display import clear_output
+      # import PIL.Image as Image
+      # import urllib3
+      # import io
+      import tempfile
+      from pprint import pprint
+
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      def pprint_infos(infolist: list):
+          for info in infolist:
+              pprint(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+          # '{:25}: {}'.format("tensorflow\'s version", hub.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+      # urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+
+* Gradient Tapes
+  GradientTape 内で実行されたすべてのオペレーションは記録されており、自動微分を行うために用いられます。
+#+NAME: 48670d2f-47ce-49bd-a170-3e3a33cb0cc0
+#+BEGIN_SRC ein-python :session localhost :results pp :exports both
+  x = tf.ones((2, 2))
+
+  with tf.GradientTape() as t:
+      t.watch(x)
+      y = tf.reduce_sum(x)
+      z = tf.multiply(y, y)
+
+  # Deriative of z with respect to the original input tensor x
+  dz_dx = t.gradient(z, x)
+
+  print_infos([
+      'dz_dx',
+      dz_dx,
+  ])
+#+END_SRC
+
+#+RESULTS: 48670d2f-47ce-49bd-a170-3e3a33cb0cc0
+: dz_dx
+: tf.Tensor(
+: [[8. 8.]
+:  [8. 8.]], shape=(2, 2), dtype=float32)
+#+NAME: cce8b0e3-3661-4c9c-9eb6-cd84f9840add
+#+BEGIN_SRC ein-python :session localhost :results pp :exports both
+  x = tf.constant(3.0)
+
+  with tf.GradientTape(persistent=True) as t:
+      t.watch(x)
+      y = x * x
+      z = y * y
+
+  # 4  * x^3
+  dz_dx = t.gradient(z, x)
+
+  # 2 * x
+  dy_dx = t.gradient(y, x)
+
+  # 2 * (y = x ^ 2)
+  dz_dy = t.gradient(z, y)
+
+  print_infos(['dz_dx', dz_dx, 'dy_dx', dy_dx, 'dz_dy', dz_dy])
+  # You should delete used tape
+  del t
+#+END_SRC
+
+#+RESULTS: cce8b0e3-3661-4c9c-9eb6-cd84f9840add
+: dz_dx
+: tf.Tensor(108.0, shape=(), dtype=float32)
+: dy_dx
+: tf.Tensor(6.0, shape=(), dtype=float32)
+: dz_dy
+: tf.Tensor(18.0, shape=(), dtype=float32)
+
+** Recording control flow
+   #+NAME: 70e83c9f-d3c9-424d-8a5d-aeafa4a0656a
+   #+BEGIN_SRC ein-python :session localhost :results pp
+     def f(x, y):
+         output = 1.0
+         for i in range(y):
+             if i > 1 and i < 5:
+                 output = tf.multiply(output, x)
+         return output
+
+     def grad(x, y):
+         with tf.GradientTape() as t:
+             t.watch(x)
+             output = f(x, y)
+         return t.gradient(output, x)
+
+
+     x = tf.convert_to_tensor(2.0)
+     assert grad(x, 6).numpy() == 12.0
+     assert grad(x, 5).numpy() == 12.0
+     assert grad(x, 4).numpy() == 4.0
+   #+END_SRC
+
+   #+RESULTS: 70e83c9f-d3c9-424d-8a5d-aeafa4a0656a
+
+** 高階勾配
+   #+NAME: 60adc695-3a5a-461a-81ba-9dd276161c98
+   #+BEGIN_SRC ein-python :session localhost :results pp
+     x = tf.Variable(1.0)
+
+     with tf.GradientTape() as t1:
+         with tf.GradientTape() as t2:
+             y = tf.pow(x, 3)
+         dy_dx = t2.gradient(y, x)
+     d2y_dx2 = t1.gradient(dy_dx, x)
+
+     assert dy_dx.numpy() == 3.0
+     assert d2y_dx2.numpy() == 6.0
+   #+END_SRC
+
+   #+RESULTS: 60adc695-3a5a-461a-81ba-9dd276161c98
+
+

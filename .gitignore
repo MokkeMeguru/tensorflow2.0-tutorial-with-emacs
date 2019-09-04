@@ -30,4 +30,15 @@ tutorials/begginers/basic/training_1
 tutorials/begginers/basic/training_2
 /tutorials/begginers/dataPreprocessing/Untitled.ipynb
 /tutorials/begginers/dataPreprocessing/images.tfrec
-
+/_minted*/
+checkpoints/*
+logs/*
+/ltximg/
+training_checkpoints/
+tutorials/advanced/training_checkpoints/*
+/*.json
+*.json
+*.zip
+/tutorials/advanced/cutomization/training_checkpoints/*
+checkpoints/
+logs/

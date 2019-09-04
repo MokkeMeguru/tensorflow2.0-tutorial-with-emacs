@@ -1,0 +1,544 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: Custom training: walkthrough
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+      import tensorflow_probability as tfp
+      # from tensorflow_examples.models.pix2pix import pix2pix
+
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      from tensorflow.keras.models import Sequential
+      # import tensorflow_text as text
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      # import pathlib
+      # import random
+      # import IPython.display as display
+      # from IPython.display import clear_output
+      # import PIL.Image as Image
+      # import urllib3
+      # import io
+      import tempfile
+      from pprint import pprint
+
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      def pprint_infos(infolist: list):
+          for info in infolist:
+              pprint(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+          # '{:25}: {}'.format("tensorflow\'s version", hub.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+      # urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+* データセットのインポート
+  #+NAME: 8686650a-08b2-48dd-b55f-31fd3bf3b03f
+  #+BEGIN_SRC ein-python :session localhost :results none
+    train_dataset_url = 'https://storage.googleapis.com/download.tensorflow.org/data/iris_training.csv'
+    train_dataset_fp = keras.utils.get_file(fname=os.path.basename(train_dataset_url),
+                                            origin = train_dataset_url)
+  #+END_SRC
+
+  #+RESULTS: 8686650a-08b2-48dd-b55f-31fd3bf3b03f
+
+  #+begin_src shell :exports both
+  head -n5 /home/meguru/.keras/datasets/iris_training.csv
+  #+end_src
+
+  #+RESULTS:
+  | 120 |   4 | setosa | versicolor | virginica |
+  | 6.4 | 2.8 |    5.6 |        2.2 |         2 |
+  | 5.0 | 2.3 |    3.3 |        1.0 |         1 |
+  | 4.9 | 2.5 |    4.5 |        1.7 |         2 |
+  | 4.9 | 3.1 |    1.5 |        0.1 |         0 |
+
+  #+NAME: 42ecb8a5-8931-46c5-800a-7ddbe7234d12
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    # column order in CSV file
+    column_names = [
+        'sepal_length', 'sepal_width', 'petal_length', 'petal_width', 'species'
+    ]
+
+    feature_names = column_names[:-1]
+    label_name = column_names[-1]
+    print_infos(
+        ['Features: {}'.format(feature_names), 'Label: {}'.format(label_name)])
+  #+END_SRC
+
+  #+RESULTS: 42ecb8a5-8931-46c5-800a-7ddbe7234d12
+  :results:
+  Features: ['sepal_length', 'sepal_width', 'petal_length', 'petal_width']
+  Label: species
+  :end:
+
+  #+NAME: bf87f870-59e9-40eb-a911-8657dce9a764
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer 
+    class_names = ['Iris setosa', 'Iris versicolor', 'Iris virginica']
+  #+END_SRC
+
+  #+RESULTS: bf87f870-59e9-40eb-a911-8657dce9a764
+  :results:
+  :end:
+** Create a tf.data.Dataset
+  #+NAME: 191542d1-e978-47e7-80a1-6a0d0ae5bd20
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    BATCH_SIZE = 32
+
+    train_dataset = tf.data.experimental.make_csv_dataset(
+        train_dataset_fp,
+        BATCH_SIZE,
+        column_names=column_names,
+        label_name=label_name,
+        num_epochs=1)
+  #+END_SRC
+
+  #+RESULTS: 191542d1-e978-47e7-80a1-6a0d0ae5bd20
+  :results:
+  :end:
+
+  #+NAME: 9f26900b-b6fb-4931-a009-800ddbf82632
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    features, labels = next(iter(train_dataset))
+    print(features)
+  #+END_SRC
+
+  #+RESULTS: 9f26900b-b6fb-4931-a009-800ddbf82632
+  :results:
+  OrderedDict([('sepal_length', <tf.Tensor: id=7844, shape=(32,), dtype=float32, numpy=
+  array([4.8, 4.9, 5.6, 4.6, 6.2, 5.8, 4.6, 6.5, 6.5, 5.5, 6.2, 5. , 5.2,
+         5.5, 5.8, 5.1, 6.7, 6.6, 5.8, 4.9, 5. , 6.7, 5. , 5. , 4.5, 6.4,
+         5.8, 6.1, 6.5, 4.9, 4.8, 4.9], dtype=float32)>), ('sepal_width', <tf.Tensor: id=7845, shape=(32,), dtype=float32, numpy=
+  array([3.1, 3.1, 2.5, 3.6, 2.8, 2.7, 3.2, 3.2, 2.8, 2.6, 2.2, 3.3, 3.4,
+         2.4, 2.7, 3.5, 3.3, 2.9, 2.6, 3.1, 2. , 3.1, 3.4, 3. , 2.3, 3.2,
+         4. , 3. , 3. , 3.1, 3. , 3. ], dtype=float32)>), ('petal_length', <tf.Tensor: id=7842, shape=(32,), dtype=float32, numpy=
+  array([1.6, 1.5, 3.9, 1. , 4.8, 5.1, 1.4, 5.1, 4.6, 4.4, 4.5, 1.4, 1.4,
+         3.8, 5.1, 1.4, 5.7, 4.6, 4. , 1.5, 3.5, 4.4, 1.5, 1.6, 1.3, 5.3,
+         1.2, 4.9, 5.2, 1.5, 1.4, 1.4], dtype=float32)>), ('petal_width', <tf.Tensor: id=7843, shape=(32,), dtype=float32, numpy=
+  array([0.2, 0.1, 1.1, 0.2, 1.8, 1.9, 0.2, 2. , 1.5, 1.2, 1.5, 0.2, 0.2,
+         1.1, 1.9, 0.3, 2.1, 1.3, 1.2, 0.1, 1. , 1.4, 0.2, 0.2, 0.3, 2.3,
+         0.2, 1.8, 2. , 0.1, 0.3, 0.2], dtype=float32)>)])
+  :end:
+
+  #+NAME: dbd90783-d096-4092-be8d-cde7b598ff43
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    plt.scatter(features['petal_length'],
+                features['sepal_length'],
+                c=labels,
+                cmap='viridis')
+
+    plt.xlabel("Petal length")
+    plt.ylabel("Sepal length")
+    plt.show()
+  #+END_SRC
+
+  #+RESULTS: dbd90783-d096-4092-be8d-cde7b598ff43
+  :results:
+  [[file:ein-images/ob-ein-c17c79bd0ceaa92131688cb7d23df624.png]]
+  :end:
+
+  #+NAME: 39a8a205-c9a9-4942-b4a5-7fae5806aecc
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    @tf.function
+    def pack_features_vector(features, labels):
+        """Pack the features into a single array"""
+        features = tf.stack(list(features.values()), axis=1)
+        return features, labels
+
+    train_dataset = train_dataset.map(pack_features_vector)
+  #+END_SRC
+
+  #+RESULTS: 39a8a205-c9a9-4942-b4a5-7fae5806aecc
+  :results:
+  :end:
+
+  #+NAME: fd555511-d188-4466-8b31-f16e77072a53
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    features, labels = next(iter(train_dataset))
+    print(features[:5])
+  #+END_SRC
+
+  #+RESULTS: fd555511-d188-4466-8b31-f16e77072a53
+  :results:
+  tf.Tensor(
+  [[4.9 2.4 3.3 1. ]
+   [5.  2.  3.5 1. ]
+   [6.  3.  4.8 1.8]
+   [6.8 3.  5.5 2.1]
+   [5.  3.4 1.5 0.2]], shape=(5, 4), dtype=float32)
+  :end:
+* Select the type of model
+** Create a model using Keras
+   #+NAME: 2c21550b-8f1b-4954-88d1-42460f0c46c8
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     model = keras.Sequential([
+         layers.Dense(10, activation=tf.nn.relu, input_shape=(4, )),
+         layers.Dense(10, activation=tf.nn.relu),
+         layers.Dense(3)
+     ])
+     model.summary()
+   #+END_SRC
+
+   #+RESULTS: 2c21550b-8f1b-4954-88d1-42460f0c46c8
+   :results:
+   Model: "sequential_2"
+   _________________________________________________________________
+   Layer (type)                 Output Shape              Param #   
+   =================================================================
+   dense_9 (Dense)              (None, 10)                50        
+   _________________________________________________________________
+   dense_10 (Dense)             (None, 10)                110       
+   _________________________________________________________________
+   dense_11 (Dense)             (None, 3)                 33        
+   =================================================================
+   Total params: 193
+   Trainable params: 193
+   Non-trainable params: 0
+   _________________________________________________________________
+   :end:
+
+   #+NAME: 8daa8470-5d2a-496c-bbc8-72dc9a68dee3
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     predictions = model(features)
+
+     print_infos([
+         'predictions', predictions[:5], '\nsoftmax-ed predictions',
+         tf.nn.softmax(predictions[:5]),
+         '\nPredictions: {}'.format(tf.argmax(predictions, axis=1)),
+         '\nLabels: {}'.format(labels)
+     ])
+   #+END_SRC
+
+   #+RESULTS: 8daa8470-5d2a-496c-bbc8-72dc9a68dee3
+   :results:
+   predictions
+   tf.Tensor(
+   [[1.617022  1.5353953 1.4215513]
+    [1.6096592 1.6133707 1.4449035]
+    [2.1753433 1.9424584 1.740495 ]
+    [2.41298   2.2182896 1.9619051]
+    [1.1716708 1.230469  1.4959558]], shape=(5, 3), dtype=float32)
+
+   softmax-ed predictions
+   tf.Tensor(
+   [[0.36442307 0.33585808 0.29971883]
+    [0.35065338 0.3519572  0.29738942]
+    [0.40990198 0.32474267 0.26535532]
+    [0.4064987  0.33458474 0.25891656]
+    [0.29039353 0.30798012 0.40162632]], shape=(5, 3), dtype=float32)
+
+   Predictions: [0 1 0 0 2 0 0 2 2 0 2 0 0 0 0 0 0 2 0 0 0 2 0 0 0 2 2 2 0 0 2 2]
+
+   Labels: [1 1 2 2 0 2 2 0 0 1 0 2 2 2 1 1 1 0 1 1 1 0 2 2 2 0 0 0 1 1 0 0]
+   :end:
+
+* Train the model
+  損失関数の定義
+  #+NAME: 62a59123-ebbb-4d7b-b599-7f82c81d7d38
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    loss_object = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+
+
+    def loss(model, x, y):
+        y_pred = model(x)
+        return loss_object(y_true=y, y_pred=y_pred)
+
+
+    l = loss(model, features, labels)
+    print("Loss test: {}".format(l))
+  #+END_SRC
+
+  #+RESULTS: 62a59123-ebbb-4d7b-b599-7f82c81d7d38
+  :results:
+  Loss test: 1.2260715961456299
+  :end:
+  
+  勾配の定義
+  #+NAME: 480dba10-3d53-4bd3-924a-f172d2477549
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    def grad(model, inputs, targets):
+        with tf.GradientTape() as tape:
+            loss_value = loss(model, inputs, targets)
+        return loss_value, tape.gradient(loss_value, model.trainable_variables)
+  #+END_SRC
+
+  #+RESULTS: 480dba10-3d53-4bd3-924a-f172d2477549
+  :results:
+  :end:
+
+  最適化関数の定義
+  #+NAME: 84063c0b-0c15-4622-8096-7b7f86e2416c
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    optimizer = keras.optimizers.Adam(learning_rate=0.01)
+  #+END_SRC
+
+  #+RESULTS: 84063c0b-0c15-4622-8096-7b7f86e2416c
+  :results:
+  :end:
+  
+  1 step をシュミレーションする
+  #+NAME: 4106e1d8-a562-43b3-ae6b-144adbcb6f9e
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    loss_value, grads = grad(model, features, labels)
+
+    optimizer.apply_gradients(zip(grads, model.trainable_variables))
+
+    print_infos([
+        'Step: {}'.format(optimizer.iterations.numpy() - 1),
+        'Initial Loss: {}'.format(loss_value.numpy()),
+        'Step: {}'.format(optimizer.iterations.numpy()),
+        'Loss: {}'.format(loss(model, features, labels).numpy())
+    ])
+  #+END_SRC
+
+  #+RESULTS: 4106e1d8-a562-43b3-ae6b-144adbcb6f9e
+  :results:
+  Step: 0
+  Initial Loss: 1.2260715961456299
+  Step: 1
+  Loss: 1.1743371486663818
+  :end:
+
+
+  #+NAME: 5f47bedf-c3f1-412b-8507-9cceb86f077a
+  #+BEGIN_SRC ein-python :session localhost :results none
+    train_loss_results = []
+    train_acc_results = []
+
+    num_epochs = 201
+
+    for epoch in range(num_epochs):
+        epoch_loss_avg = keras.metrics.Mean()
+        epoch_acc = keras.metrics.SparseCategoricalAccuracy()
+        for x, y in train_dataset:
+            loss_value, grads = grad(model, x, y)
+            optimizer.apply_gradients(zip(grads, model.trainable_variables))
+
+            # Track progress
+            # Add current batch loss
+            epoch_loss_avg(loss_value)
+            epoch_acc(y, model(x))
+
+        # End epoch
+        train_loss_results.append(epoch_loss_avg.result())
+        train_acc_results.append(epoch_acc.result())
+
+        if epoch % 50 == 0:
+            print_infos([
+                'Epoch: {:03d}\t'.format(epoch) +
+                'Loss: {:.3f}\t'.format(epoch_loss_avg.result()) +
+                'Acc: {:.3f}'.format(epoch_acc.result())
+            ])
+  #+END_SRC
+
+  #+RESULTS: 5f47bedf-c3f1-412b-8507-9cceb86f077a
+  Epoch: 000	Loss: 1.202	Acc: 0.350
+  Epoch: 050	Loss: 0.108	Acc: 0.975
+  Epoch: 100	Loss: 0.063	Acc: 0.975
+  Epoch: 150	Loss: 0.047	Acc: 0.992
+  Epoch: 200	Loss: 0.044	Acc: 0.983
+
+  #+NAME: 908afa1b-9bee-41ee-807a-f303555fe12c
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    fig, axes = plt.subplots(2, sharex=True, figsize=(12, 8))
+    fig.suptitle('Training Metrics')
+
+    axes[0].set_ylabel("Loss", fontsize=14)
+    axes[0].plot(train_loss_results)
+
+    axes[1].set_ylabel("Accuracy", fontsize=14)
+    axes[1].set_xlabel("Epoch", fontsize=14)
+    axes[1].plot(train_acc_results)
+    plt.show()
+  #+END_SRC
+
+  #+RESULTS: 908afa1b-9bee-41ee-807a-f303555fe12c
+  :results:
+  [[file:ein-images/ob-ein-6d6cff2f261ddd66941e47c5963010b5.png]]
+  :end:
+
+* model の精度を評価する
+  
+** テストデータセットを用意する
+   #+NAME: 60610aa9-e92e-4722-a261-6b758cafa9cd
+   #+BEGIN_SRC ein-python :session localhost :results none
+     test_url = 'https://storage.googleapis.com/download.tensorflow.org/data/iris_test.csv'
+     test_fp = keras.utils.get_file(fname=os.path.basename(test_url),
+                                    origin=test_url)
+   #+END_SRC
+
+   #+RESULTS: 60610aa9-e92e-4722-a261-6b758cafa9cd
+
+   #+NAME: 2c72b321-d7df-4bbb-89ce-1d06579d4884
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer
+     test_dataset = tf.data.experimental.make_csv_dataset(test_fp,
+                                                          BATCH_SIZE,
+                                                          column_names=column_names,
+                                                          label_name='species',
+                                                          num_epochs=1,
+                                                          shuffle=False)
+
+     test_dataset = test_dataset.map(pack_features_vector)
+   #+END_SRC
+
+   #+RESULTS: 2c72b321-d7df-4bbb-89ce-1d06579d4884
+   :results:
+   :end:
+   
+   テストデータの精度
+   #+NAME: 3af20ded-989e-49f9-bc3f-d29532b38d18
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer
+     test_acc = keras.metrics.Accuracy()
+
+     for (x, y) in test_dataset:
+         logits = model(x)
+         prediction =tf.argmax(logits, axis=1, output_type=tf.int32)
+         test_acc(prediction, y)
+
+     print_infos([
+         'Test set acc: {:.3%}'.format(test_acc.result())
+     ])
+   #+END_SRC
+
+   #+RESULTS: 3af20ded-989e-49f9-bc3f-d29532b38d18
+   :results:
+   Test set acc: 96.667%
+   :end:
+   
+   last batch's result
+   #+NAME: 595b7464-5345-4b56-ac2f-5f0212e6f4e5
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer
+     tf.stack([y,prediction],axis=1)
+   #+END_SRC
+
+   #+RESULTS: 595b7464-5345-4b56-ac2f-5f0212e6f4e5
+   :results:
+   <tf.Tensor: id=353215, shape=(30, 2), dtype=int32, numpy=
+   array([[1, 1],
+          [2, 2],
+          [0, 0],
+          [1, 1],
+          [1, 1],
+          [1, 1],
+          [0, 0],
+          [2, 1],
+          [1, 1],
+          [2, 2],
+          [2, 2],
+          [0, 0],
+          [2, 2],
+          [1, 1],
+          [1, 1],
+          [0, 0],
+          [1, 1],
+          [0, 0],
+          [0, 0],
+          [2, 2],
+          [0, 0],
+          [1, 1],
+          [2, 2],
+          [1, 1],
+          [1, 1],
+          [1, 1],
+          [0, 0],
+          [1, 1],
+          [2, 2],
+          [1, 1]], dtype=int32)>
+   :end:
+
+* Predictions using the trained model
+  #+NAME: 51cb2dd4-9d8a-4af8-93e0-eaa8709ddd25
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    predict_dataset = tf.convert_to_tensor([[
+        5.1,
+        3.3,
+        1.7,
+        0.5,
+    ], [
+        5.9,
+        3.0,
+        4.2,
+        1.5,
+    ], [6.9, 3.1, 5.4, 2.1]])
+
+    predictions = model(predict_dataset)
+
+    for i, logits in enumerate(predictions):
+        class_idx = tf.argmax(logits).numpy()
+        p = tf.nn.softmax(logits)[class_idx]
+        name = class_names[class_idx]
+        print("Example {} prediction: {} ({:4.1f}%)".format(i, name, 100 * p))
+  #+END_SRC
+
+  #+RESULTS: 51cb2dd4-9d8a-4af8-93e0-eaa8709ddd25
+  :results:
+  Example 0 prediction: Iris setosa (99.9%)
+  Example 1 prediction: Iris versicolor (100.0%)
+  Example 2 prediction: Iris virginica (99.2%)
+  :end:
+

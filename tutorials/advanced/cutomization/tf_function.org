@@ -1,0 +1,332 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: tf.function and AutoGraph
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+      import tensorflow_probability as tfp
+      # from tensorflow_examples.models.pix2pix import pix2pix
+
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      from tensorflow.keras.models import Sequential
+      # import tensorflow_text as text
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      # import pathlib
+      # import random
+      # import IPython.display as display
+      # from IPython.display import clear_output
+      # import PIL.Image as Image
+      # import urllib3
+      # import io
+      import tempfile
+      from pprint import pprint
+
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      def pprint_infos(infolist: list):
+          for info in infolist:
+              pprint(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+          # '{:25}: {}'.format("tensorflow\'s version", hub.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+      # urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+
+
+  #+NAME: 306bd3a0-5a3c-41dc-a6eb-ed3305a1b616
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    import contextlib
+
+
+    @contextlib.contextmanager
+    def assert_raises(error_class):
+        try:
+            yield
+        except error_class as e:
+            print('Caught expected exception \n {}: {}'.format(error_class, e))
+        except Exception as e:
+            print('Got unexpected exception \n {}: {}'.format(type(e), e))
+        else:
+            raise Exception(
+                'Expected {} to be raised but no error was raised!'.format(
+                    error_class))
+  #+END_SRC
+
+  #+RESULTS: 306bd3a0-5a3c-41dc-a6eb-ed3305a1b616
+  :results:
+  :end:
+* Tracing and polymorphism
+  #+NAME: 9352995d-9e58-4ee3-a07a-97eab0be3e34
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    @tf.function
+    def double(a):
+        print('tracking with ', a)
+        return a + a
+
+    print_infos([
+        double(tf.constant(1)),
+        double(tf.constant(1.1)),
+        double(tf.constant('a'))
+    ])
+  #+END_SRC
+
+  #+RESULTS: 9352995d-9e58-4ee3-a07a-97eab0be3e34
+  :results:
+  tracking with  Tensor("a:0", shape=(), dtype=int32)
+  tracking with  Tensor("a:0", shape=(), dtype=float32)
+  tracking with  Tensor("a:0", shape=(), dtype=string)
+  tf.Tensor(2, shape=(), dtype=int32)
+  tf.Tensor(2.2, shape=(), dtype=float32)
+  tf.Tensor(b'aa', shape=(), dtype=string)
+  :end:
+
+  To control the tracing behavior, use the following techniques:
+  1. Create a new tf.function. Separate tf.function objects are guaranteed not to share traces.
+  2. Use the get_concrete_function method to get a specific trace
+  3. Specify input_signature when calling tf.function to trace only once per calling graph.
+  #+NAME: 7db6962a-300c-4c74-889b-872df673e353
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    print("Obtaining concrete trace")
+    double_strings = double.get_concrete_function(
+        tf.TensorSpec(shape=None, dtype=tf.string))
+    print("Executing traced function")
+    print(double_strings(tf.constant("a")))
+    print(double_strings(a=tf.constant("b")))
+    print()
+    print("Using a concrete trace with incompatible types will throw an error")
+    with assert_raises(tf.errors.InvalidArgumentError):
+        double_strings(tf.constant(1))
+  #+END_SRC
+
+  #+RESULTS: 7db6962a-300c-4c74-889b-872df673e353
+  :results:
+  Obtaining concrete trace
+  Executing traced function
+  tf.Tensor(b'aa', shape=(), dtype=string)
+  tf.Tensor(b'bb', shape=(), dtype=string)
+
+  Using a concrete trace with incompatible types will throw an error
+  Caught expected exception 
+   <class 'tensorflow.python.framework.errors_impl.InvalidArgumentError'>: cannot compute __inference_double_353311 as input #0(zero-based) was expected to be a string tensor but is a int32 tensor [Op:__inference_double_353311]
+  :end:
+
+  
+  #+NAME: 1fcc64d5-00da-4050-aec7-183b837878ab
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    @tf.function(input_signature=(tf.TensorSpec(shape=[None], dtype=tf.int32), ))
+    def next_collatz(x):
+        print("Tracing with", x)
+        return tf.where(x % 2 == 0, x // 2, 3 * x + 1)
+
+
+    print(next_collatz(tf.constant([1, 2])))
+    # We specified a 1-D tensor in the input signature, so this should fail.
+    print()
+    with assert_raises(ValueError):
+        next_collatz(tf.constant([[1, 2], [3, 4]]))
+  #+END_SRC
+
+  #+RESULTS: 1fcc64d5-00da-4050-aec7-183b837878ab
+  :results:
+  Tracing with Tensor("x:0", shape=(None,), dtype=int32)
+  tf.Tensor([4 1], shape=(2,), dtype=int32)
+
+  Caught expected exception 
+   <class 'ValueError'>: Python inputs incompatible with input_signature:
+    inputs: (
+      tf.Tensor(
+  [[1 2]
+   [3 4]], shape=(2, 2), dtype=int32))
+    input_signature: (
+      TensorSpec(shape=(None,), dtype=tf.int32, name=None))
+  :end:
+* Side effects in tf.function
+  #+NAME: 876f6628-ff22-40ce-87b8-487e6154b037
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    @tf.function
+    def f(x):
+        print("Traced with", x)
+        tf.print("Executed with", x)
+
+
+    f(1)
+    f(1)
+    f(2)
+  #+END_SRC
+
+  #+RESULTS: 876f6628-ff22-40ce-87b8-487e6154b037
+  :results:
+  Traced with 1
+  Executed with 1
+
+  Executed with 1
+
+  Traced with 2
+  Executed with 2
+  :end:
+
+
+  呼び出し毎に副作用を起こしたい際には、tf.py_function でラップする必要があります。
+  #+NAME: d88af0ab-a038-495b-856c-b14ab87fd518
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    external_list = []
+
+
+    def side_effect(x):
+        print('Python side effect')
+        external_list.append(x)
+
+
+    @tf.function
+    def f(x):
+        tf.py_function(side_effect, inp=[x], Tout=[])
+
+
+    f(1)
+    f(1)
+    f(1)
+    assert len(external_list) == 3
+    # .numpy() call required because py_function casts 1 to tf.constant(1)
+    assert external_list[0].numpy() == 1
+  #+END_SRC
+
+  #+RESULTS: d88af0ab-a038-495b-856c-b14ab87fd518
+  :results:
+  Python side effect
+  Python side effect
+  Python side effect
+  :end:
+
+* Using AutoGraph
+  #+NAME: 99d7afe4-2997-4166-9121-d6de533d7796
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    # Simple loop
+
+
+    @tf.function
+    def f(x):
+        while tf.reduce_sum(x) > 1:
+            x = tf.tanh(x)
+        return x
+
+
+    f(tf.random.uniform([5]))
+  #+END_SRC
+
+  #+RESULTS: 99d7afe4-2997-4166-9121-d6de533d7796
+  :results:
+  <tf.Tensor: id=353523, shape=(5,), dtype=float32, numpy=
+  array([0.20339304, 0.22859849, 0.22837679, 0.23090568, 0.10108335],
+        dtype=float32)>
+  :end:
+  
+  AutoGraphが生成するコードの確認
+  #+NAME: 1c11ce93-e072-43ee-9d75-d395b025ce7b
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    # If you're curious you can inspect the code autograph generates.
+    # It feels like reading assembly language, though.
+
+
+    def f(x):
+        while tf.reduce_sum(x) > 1:
+            x = tf.tanh(x)
+        return x
+
+
+    print(tf.autograph.to_code(f))
+  #+END_SRC
+
+  #+RESULTS: 1c11ce93-e072-43ee-9d75-d395b025ce7b
+  :results:
+  def tf__f(x):
+    do_return = False
+    retval_ = ag__.UndefinedReturnValue()
+    with ag__.FunctionScope('f', 'f_scope', ag__.ConversionOptions(recursive=True, user_requested=True, optional_features=(), internal_convert_user_code=True)) as f_scope:
+
+      def get_state():
+        return ()
+
+      def set_state(_):
+        pass
+
+      def loop_body(x):
+        x = ag__.converted_call(tf.tanh, f_scope.callopts, (x,), None, f_scope)
+        return x,
+
+      def loop_test(x):
+        return ag__.converted_call(tf.reduce_sum, f_scope.callopts, (x,), None, f_scope) > 1
+      x, = ag__.while_stmt(loop_test, loop_body, get_state, set_state, (x,), ('x',), ())
+      do_return = True
+      retval_ = f_scope.mark_return_value(x)
+    do_return,
+    return ag__.retval(retval_)
+
+  :end:
+
+  

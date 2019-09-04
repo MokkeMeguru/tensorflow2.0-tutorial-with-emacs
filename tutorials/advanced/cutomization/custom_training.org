@@ -1,0 +1,245 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: Custom training: basics
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+      import tensorflow_probability as tfp
+      # from tensorflow_examples.models.pix2pix import pix2pix
+
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      from tensorflow.keras.models import Sequential
+      # import tensorflow_text as text
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+
+
+      # import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      # import yaml
+      # import h5py
+      # import pathlib
+      # import random
+      # import IPython.display as display
+      # from IPython.display import clear_output
+      # import PIL.Image as Image
+      # import urllib3
+      # import io
+      import tempfile
+      from pprint import pprint
+
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      def pprint_infos(infolist: list):
+          for info in infolist:
+              pprint(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+          # '{:25}: {}'.format("tensorflow\'s version", hub.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+      # urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+
+* Variables
+  #+NAME: 366b1ecb-1b8f-407a-9a2a-7f6a7cdf537b
+  #+BEGIN_SRC ein-python :session localhost :results pp :exports both
+    x = tf.zeros([10, 10])
+    x += 2
+
+    v = tf.Variable(1.0)
+    v.assign(3.0)
+    v.assign(tf.square(v))
+
+    print_infos(['x', x, '\nv', v.numpy()])
+  #+END_SRC
+
+  #+RESULTS: 366b1ecb-1b8f-407a-9a2a-7f6a7cdf537b
+  #+begin_example
+  x
+  tf.Tensor(
+  [[2. 2. 2. 2. 2. 2. 2. 2. 2. 2.]
+   [2. 2. 2. 2. 2. 2. 2. 2. 2. 2.]
+   [2. 2. 2. 2. 2. 2. 2. 2. 2. 2.]
+   [2. 2. 2. 2. 2. 2. 2. 2. 2. 2.]
+   [2. 2. 2. 2. 2. 2. 2. 2. 2. 2.]
+   [2. 2. 2. 2. 2. 2. 2. 2. 2. 2.]
+   [2. 2. 2. 2. 2. 2. 2. 2. 2. 2.]
+   [2. 2. 2. 2. 2. 2. 2. 2. 2. 2.]
+   [2. 2. 2. 2. 2. 2. 2. 2. 2. 2.]
+   [2. 2. 2. 2. 2. 2. 2. 2. 2. 2.]], shape=(10, 10), dtype=float32)
+
+  v
+  9.0
+  #+end_example
+* Fit a Linear model
+** Define the model
+   #+NAME: c5302b83-1041-4ba8-a84c-f264c168c261
+   #+BEGIN_SRC ein-python :session localhost :results pp
+     class MyModel():
+         def __init__(self):
+             # Initialize the weights to 5.0 and the bias to 0.0
+             # In practice, these should be initialized to random values
+             # (for example, with tf.random.normal)
+             self.W = tf.Variable(5.0)
+             self.b = tf.Variable(0.0)
+
+         def __call__(self, x):
+             return self.W * x + self.b
+
+
+     model = MyModel()
+
+     assert model(3.0).numpy() == 15.0
+   #+END_SRC
+
+   #+RESULTS: c5302b83-1041-4ba8-a84c-f264c168c261
+** Define loss function
+   #+NAME: e55ee9a4-cef3-47f1-b9dc-bb5c009d2929
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer
+     def loss(predicted_y,  target_y):
+         return tf.reduce_mean(tf.square(predicted_y - target_y))
+   #+END_SRC
+
+   #+RESULTS: e55ee9a4-cef3-47f1-b9dc-bb5c009d2929
+   :results:
+   :end:
+
+** Obtain training data
+   #+NAME: 7c312459-14a6-47fa-a16e-53f09b399693
+   #+BEGIN_SRC ein-python :session localhost :results drawer :exports both
+     TRUE_W = 3.0
+     TRUE_B = 2.0
+     NUM_EXAMPLES = 1000
+
+     inputs_dist = tfp.distributions.Normal(loc=0., scale=1.)
+     noise_dist = tfp.distributions.Normal(loc=0., scale=1.)
+
+     # inputs = tf.random.normal(shape=[NUM_EXAMPLES])
+     # noise = tf.random.normal(shape=[NUM_EXAMPLES])
+
+     inputs = inputs_dist.sample([NUM_EXAMPLES])
+     noise = noise_dist.sample([NUM_EXAMPLES])
+     outputs = inputs * TRUE_W + TRUE_B + noise
+
+     plt.scatter(inputs, outputs, c='b')
+     plt.scatter(inputs, model(inputs), c='r')
+     plt.show()
+
+     print('Current loss: {:.6f}'.format(loss(model(inputs), outputs).numpy()))
+   #+END_SRC
+
+   #+RESULTS: 7c312459-14a6-47fa-a16e-53f09b399693
+   :results:
+   [[file:ein-images/ob-ein-8a9141b1967940e524e77a67a4b97d19.png]]
+   Current loss: 9.620243
+   :end:
+
+** Define a training loop
+   #+NAME: 38d3d34f-8d31-4b18-8d91-4913114adab9
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+     def train(model, inputs, outputs, learning_rate):
+         with tf.GradientTape() as t:
+             current_loss = loss(model(inputs), outputs)
+         dW, db = t.gradient(current_loss, [model.W, model.b])
+         model.W.assign_sub(learning_rate * dW)
+         model.b.assign_sub(learning_rate * db)
+
+
+     model = MyModel()
+     Ws, bs = [], []
+     for epoch in range(10):
+         Ws.append(model.W.numpy())
+         bs.append(model.b.numpy())
+         current_loss = loss(model(inputs), outputs)
+
+         train(model, inputs, outputs, learning_rate=0.1)
+         print_infos([
+             'Epoch: {:2d}'.format(epoch) + '\tW: {:.2f}'.format(Ws[-1]) +
+             '\tb: {:.2f}'.format(bs[-1]) + '\tloss: {:.2f}'.format(current_loss)
+         ])
+   #+END_SRC
+
+   #+RESULTS: 38d3d34f-8d31-4b18-8d91-4913114adab9
+   :results:
+   Epoch:  0	W: 5.00	b: 0.00	loss: 9.62
+   Epoch:  1	W: 4.58	b: 0.43	loss: 6.44
+   Epoch:  2	W: 4.25	b: 0.76	loss: 4.43
+   Epoch:  3	W: 3.99	b: 1.03	loss: 3.17
+   Epoch:  4	W: 3.78	b: 1.24	loss: 2.37
+   Epoch:  5	W: 3.61	b: 1.41	loss: 1.87
+   Epoch:  6	W: 3.48	b: 1.54	loss: 1.55
+   Epoch:  7	W: 3.37	b: 1.65	loss: 1.36
+   Epoch:  8	W: 3.29	b: 1.73	loss: 1.23
+   Epoch:  9	W: 3.22	b: 1.79	loss: 1.15
+   :end:
+
+#+NAME: a508eb48-f740-4456-acfc-4e5d53f9f03f
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  plt.plot(range(10), Ws, 'r', range(10), bs, 'b')
+  plt.plot([TRUE_W] * len(range(10)), 'r--', [TRUE_B] * len(range(10)), 'b--')
+  plt.legend(['W', 'b', 'True W', 'True b'])
+  plt.show()
+#+END_SRC
+
+#+RESULTS: a508eb48-f740-4456-acfc-4e5d53f9f03f
+:results:
+[[file:ein-images/ob-ein-a261d472342fbb8672831bc1f1e6d9ff.png]]
+:end:

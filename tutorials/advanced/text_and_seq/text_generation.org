@@ -1,0 +1,547 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+options: ':nil *:t -:t ::t <:t H:3 \n:t ^:t arch:headline author:t
+#+options: broken-links:nil c:nil creator:nil d:(not "LOGBOOK") date:t e:t
+#+options: email:nil f:t inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t                                                     
+#+title: Generate text with an RNN
+#+date: <2019-08-24 土>                                                                                           
+#+author: MokkeMeguru                                                                                             
+#+email: meguru.mokke@gmail.com
+#+language: en
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 26.2 (Org mode 9.1.9)
+#+LATEX_CLASS: extarticle
+# #+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx, twocolumn, 8pt]
+#+LATEX_CLASS_OPTIONS: [a4paper, dvipdfmx]
+#+LATEX_HEADER: \usepackage{amsmath, amssymb, bm}
+#+LATEX_HEADER: \usepackage{graphics}
+#+LATEX_HEADER: \usepackage{color}
+#+LATEX_HEADER: \usepackage{times}
+#+LATEX_HEADER: \usepackage{longtable}
+#+LATEX_HEADER: \usepackage{minted}
+#+LATEX_HEADER: \usepackage{fancyvrb}
+#+LATEX_HEADER: \usepackage{indentfirst}
+#+LATEX_HEADER: \usepackage{pxjahyper}
+#+LATEX_HEADER: \usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \usepackage[backend=biber, bibencoding=utf8, style=authoryear]{biblatex}
+#+LATEX_HEADER: \usepackage[left=25truemm, right=25truemm]{geometry}
+#+LATEX_HEADER: \usepackage{ascmac}
+#+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{algorithmic}
+#+LATEX_HEADER: \hypersetup{ colorlinks=true, citecolor=blue, linkcolor=red, urlcolor=orange}
+#+LATEX_HEADER: \addbibresource{reference.bib}
+#+DESCRIPTION:
+#+KEYWORDS:
+#+STARTUP: indent overview inlineimages
+#+PROPERTY: header-args :eval never-export
+ref. Open AI's neural network GPT-2
+* TensorFlow ライブラリのインポート
+    #+NAME: eaa0d79b-f275-4039-88fa-e94633fba7a5
+    #+BEGIN_SRC ein-python :session localhost :exports both :results raw drawer
+      from __future__ import division, absolute_import
+      from __future__ import print_function, unicode_literals
+      from functools import reduce, partial
+
+      import tensorflow as tf
+      # import tensorflow_hub as hub
+      import tensorflow_datasets as tfds
+      import tensorflow_probability as tfp
+      # from tensorflow_examples.models.pix2pix import pix2pix
+
+      from tensorflow import keras
+      from tensorflow.keras import layers, datasets, models
+      from tensorflow.keras.models import Sequential
+      # import tensorflow_text as text
+
+      import numpy as np
+      import matplotlib.pyplot as plt
+
+      import pandas as pd
+      # from sklearn.model_selection import train_test_split
+      # import seaborn as sns
+      import os
+      import time
+      # import yaml
+      # import h5py
+      # import pathlib
+      # import random
+      # import IPython.display as display
+      # from IPython.display import clear_output
+      # import PIL.Image as Image
+      # import urllib3
+      # import io
+      import tempfile
+      from pprint import pprint
+
+
+      def print_infos(infolist: list):
+          for info in infolist:
+              print(info)
+
+
+      def pprint_infos(infolist: list):
+          for info in infolist:
+              pprint(info)
+
+
+      print_infos([
+          '{:25}: {}'.format("tensorflow\'s version", tf.__version__),
+          # '{:25}: {}'.format("tensorflow\'s version", hub.__version__),
+      ])
+
+      AUTOTUNE = tf.data.experimental.AUTOTUNE
+      # urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+  #+END_SRC
+
+  #+RESULTS: eaa0d79b-f275-4039-88fa-e94633fba7a5
+  :results:
+  tensorflow's version     : 2.0.0-rc0
+  :end:
+
+** Download dataset
+  #+NAME: 1b5616b0-e964-4498-896f-19841b702992
+  #+BEGIN_SRC ein-python :session localhost :results none
+    path_to_file = keras.utils.get_file(
+        'shakespeare.txt',
+        'https://storage.googleapis.com/download.tensorflow.org/data/shakespeare.txt'
+    )
+  #+END_SRC
+
+  #+RESULTS: 1b5616b0-e964-4498-896f-19841b702992
+
+  #+NAME: 69dad666-e75a-4d4c-9e6f-caf0ec298004
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    text = open(path_to_file, 'rb').read().decode(encoding='utf-8')
+    print_infos([
+        'Length of  text:',
+        '{} characters'.format(len(text))
+    ])
+  #+END_SRC
+
+  #+RESULTS: 69dad666-e75a-4d4c-9e6f-caf0ec298004
+  :results:
+  Length of  text:
+  1115394 characters
+  :end:
+
+  #+NAME: d816b19f-bb31-48b6-92c5-293f7f1ca308
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    print_infos([text[:250]])
+  #+END_SRC
+
+  #+RESULTS: d816b19f-bb31-48b6-92c5-293f7f1ca308
+  :results:
+  First Citizen:
+  Before we proceed any further, hear me speak.
+
+  All:
+  Speak, speak.
+
+  First Citizen:
+  You are all resolved rather to die than to famish?
+
+  All:
+  Resolved. resolved.
+
+  First Citizen:
+  First, you know Caius Marcius is chief enemy to the people.
+
+  :end:
+  
+  #+NAME: bc70f984-4f8b-4ab1-b59b-aa08834bae3a
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    vocab = sorted(set(text))
+    print_infos(['{} unique characters'.format(len(vocab))])
+  #+END_SRC
+
+  #+RESULTS: bc70f984-4f8b-4ab1-b59b-aa08834bae3a
+  :results:
+  65 unique characters
+  :end:
+
+* Process the text
+  #+NAME: b2cd8d79-0ed9-41f6-a78a-a955d05e4ea0
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    char2idx = {u: i for i, u in enumerate(vocab)}
+    idx2char = np.array(vocab)
+    text_as_int = np.array([char2idx[c] for c in text])
+
+    print_infos([
+        '{:4s}: {:3d}'.format(repr(c), char2idx[c])
+        for c, _ in zip(char2idx, range(10))
+    ])
+  #+END_SRC
+
+  #+RESULTS: b2cd8d79-0ed9-41f6-a78a-a955d05e4ea0
+  :results:
+  '\n':   0
+  ' ' :   1
+  '!' :   2
+  '$' :   3
+  '&' :   4
+  "'" :   5
+  ',' :   6
+  '-' :   7
+  '.' :   8
+  '3' :   9
+  :end:
+
+  #+NAME: 0c284318-5ff1-4d56-ab67-bdb4c36b0aab
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    print('{} -> {}'.format(repr(text[:13]), text_as_int[:13]))
+  #+END_SRC
+
+  #+RESULTS: 0c284318-5ff1-4d56-ab67-bdb4c36b0aab
+  :results:
+  'First Citizen' -> [18 47 56 57 58  1 15 47 58 47 64 43 52]
+  :end:
+
+  #+NAME: d5c83bc5-6661-414a-b179-010ebd7e4042
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    # The maximum length sentence we want for a single input in characters
+    seq_length = 100
+    examples_per_epoch = len(text) // seq_length
+
+    # Create training examples / targets
+    char_dataset = tf.data.Dataset.from_tensor_slices(text_as_int)
+
+    for i in char_dataset.take(5):
+        print(idx2char[i.numpy()])
+  #+END_SRC
+
+  #+RESULTS: d5c83bc5-6661-414a-b179-010ebd7e4042
+  :results:
+  F
+  i
+  r
+  s
+  t
+  :end:
+
+  #+NAME: 17b12bb4-da2d-4423-a5c4-14365a26b817
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    seqs = char_dataset.batch(seq_length + 1, drop_remainder=True)
+    for item in seqs.take(5):
+        print(repr(''.join(idx2char[item.numpy()])))
+  #+END_SRC
+
+  #+RESULTS: 17b12bb4-da2d-4423-a5c4-14365a26b817
+  :results:
+  'First Citizen:\nBefore we proceed any further, hear me speak.\n\nAll:\nSpeak, speak.\n\nFirst Citizen:\nYou '
+  'are all resolved rather to die than to famish?\n\nAll:\nResolved. resolved.\n\nFirst Citizen:\nFirst, you k'
+  "now Caius Marcius is chief enemy to the people.\n\nAll:\nWe know't, we know't.\n\nFirst Citizen:\nLet us ki"
+  "ll him, and we'll have corn at our own price.\nIs't a verdict?\n\nAll:\nNo more talking on't; let it be d"
+  'one: away, away!\n\nSecond Citizen:\nOne word, good citizens.\n\nFirst Citizen:\nWe are accounted poor citi'
+  :end:
+
+
+  #+NAME: 5a335e7f-ae6f-4819-817b-0603022eee63
+  #+BEGIN_SRC ein-python :session localhost :results none
+    def split_input_target(chunk):
+        input_text = chunk[:-1]
+        target_text = chunk[1:]
+        return input_text, target_text
+
+    dataset = seqs.map(split_input_target)
+  #+END_SRC
+
+  #+RESULTS: 5a335e7f-ae6f-4819-817b-0603022eee63
+
+  #+NAME: 452b419d-bade-4d1d-b5f3-4cf1d07e01f2
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    for input_example, target_example in dataset.take(1):
+        print_infos([
+            'Input data: {}'.format(repr(''.join(idx2char[input_example.numpy()]))),
+            'Target data: {}'.format(repr(''.join(idx2char[target_example.numpy()])))
+        ])
+  #+END_SRC
+
+  #+RESULTS: 452b419d-bade-4d1d-b5f3-4cf1d07e01f2
+  :results:
+  Input data: 'First Citizen:\nBefore we proceed any further, hear me speak.\n\nAll:\nSpeak, speak.\n\nFirst Citizen:\nYou'
+  Target data: 'irst Citizen:\nBefore we proceed any further, hear me speak.\n\nAll:\nSpeak, speak.\n\nFirst Citizen:\nYou '
+  :end:
+
+** Create training batches
+  #+NAME: 3ae952c0-622e-41f0-bdf5-8d4dabcee050
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  # Batch size
+  BATCH_SIZE = 64
+  BUFFER_SIZE = 10000
+
+  dataset = dataset.shuffle(BUFFER_SIZE).batch(BATCH_SIZE, drop_remainder=True)
+
+  dataset
+  #+END_SRC
+
+  #+RESULTS: 3ae952c0-622e-41f0-bdf5-8d4dabcee050
+  :results:
+  <BatchDataset shapes: ((64, 100), (64, 100)), types: (tf.int64, tf.int64)>
+  :end:
+  
+* Build The Model
+  ref. stateful LSTM vs stateless LSTM
+  - stateful LSTM
+    
+    for infinity seq learning (stack price forecasting, wether forecasting, next character forecasting, etc ...)
+  - stateless LSTM
+    
+    for QA system, negative/positive classification
+  #+NAME: 64afd48e-39c4-4f35-92d8-4c5d742fffd0
+  #+BEGIN_SRC ein-python :session localhost :results none
+    # Length of the vocabulary in chars
+    vocab_size = len(vocab)
+
+    # The embedding dimension
+    embedding_dim = 256
+
+    # Number of RNN units
+    rnn_units = 1024
+
+
+    def build_model(vocab_size, embedding_dim, rnn_units, batch_size):
+        model = Sequential([
+            layers.Embedding(vocab_size,
+                             embedding_dim,
+                             batch_input_shape=[batch_size, None]),
+            layers.LSTM(rnn_units,
+                        return_sequences=True,
+                        stateful=True,
+                        recurrent_initializer='glorot_uniform'),
+            layers.Dense(vocab_size)
+        ])
+        return model
+  #+END_SRC
+
+  #+RESULTS: 64afd48e-39c4-4f35-92d8-4c5d742fffd0
+
+  #+NAME: bb63f0b1-c615-4b64-8ccd-1c7a810c0326
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    model = build_model(vocab_size=len(vocab),
+                        embedding_dim=embedding_dim,
+                        rnn_units=rnn_units,
+                        batch_size=BATCH_SIZE)
+
+    model.summary()
+  #+END_SRC
+
+  #+RESULTS: bb63f0b1-c615-4b64-8ccd-1c7a810c0326
+  :results:
+  Model: "sequential_29"
+  _________________________________________________________________
+  Layer (type)                 Output Shape              Param #   
+  =================================================================
+  embedding_21 (Embedding)     (64, None, 256)           16640     
+  _________________________________________________________________
+  lstm_27 (LSTM)               (64, None, 1024)          5246976   
+  _________________________________________________________________
+  dense_38 (Dense)             (64, None, 65)            66625     
+  =================================================================
+  Total params: 5,330,241
+  Trainable params: 5,330,241
+  Non-trainable params: 0
+  _________________________________________________________________
+  :end:
+
+  #+NAME: 0e9ba9a1-c0e7-4a89-92ee-7dbb584cfc23
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    for input_example_batch, target_example_batch in dataset.take(1):
+        example_batch_predictions = model(input_example_batch)
+        print(input_example_batch.shape, '#(batch size, sequence_length)')
+        print(example_batch_predictions.shape,
+              "# (batch_size, sequence_length, vocab_size)")
+  #+END_SRC
+
+  #+RESULTS: 0e9ba9a1-c0e7-4a89-92ee-7dbb584cfc23
+  :results:
+  (64, 100) #(batch size, sequence_length)
+  (64, 100, 65) # (batch_size, sequence_length, vocab_size)
+  :end:
+  
+* Train the model
+  #+NAME: b98d9867-4c0e-44a4-90de-624310bb0eb5
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    def loss(labels, logits):
+        return tf.keras.losses.sparse_categorical_crossentropy(labels,
+                                                               logits,
+                                                               from_logits=True)
+
+
+    example_batch_loss = loss(target_example_batch, example_batch_predictions)
+    print("Prediction shape: ", example_batch_predictions.shape,
+          " # (batch_size, sequence_length, vocab_size)")
+    print("scalar_loss:      ", example_batch_loss.numpy().mean())
+  #+END_SRC
+
+  #+RESULTS: b98d9867-4c0e-44a4-90de-624310bb0eb5
+  :results:
+  Prediction shape:  (64, 100, 65)  # (batch_size, sequence_length, vocab_size)
+  scalar_loss:       4.174894
+  :end:
+
+#+NAME: 118e47d3-e71a-47cf-9bb4-3aacd1eb160c
+#+BEGIN_SRC ein-python :session localhost :results raw drawer
+  model.compile(optimizer='adam', loss=loss)
+#+END_SRC
+
+#+RESULTS: 118e47d3-e71a-47cf-9bb4-3aacd1eb160c
+:results:
+:end:
+
+** Configure checkpoints
+   #+NAME: 95a460f4-1c55-4d0a-b2a5-dc4eba1cba2e
+   #+BEGIN_SRC ein-python :session localhost :results raw drawer
+     EPOCHS = 10
+
+     # Directory where the checkpoints will be saved
+     checkpoint_dir = './training_checkpoints'
+     # Name of the checkpoint files
+     checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt_{epoch}")
+
+     checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
+         filepath=checkpoint_prefix, save_weights_only=True)
+   #+END_SRC
+
+   #+RESULTS: 95a460f4-1c55-4d0a-b2a5-dc4eba1cba2e
+   :results:
+   :end:
+
+   #+NAME: f74722dc-4dd6-4b04-9abe-e74b2f558f10
+   #+BEGIN_SRC ein-python :session localhost :results none
+     history = model.fit(dataset, epochs=EPOCHS, callbacks=[checkpoint_callback])
+   #+END_SRC
+
+   #+RESULTS: f74722dc-4dd6-4b04-9abe-e74b2f558f10
+
+* Generate text
+** restore latest checkpoint
+  #+NAME: 1fd1b522-8d79-4d5e-a1db-8a9a8f2132cf
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  tf.train.latest_checkpoint(checkpoint_dir)
+  #+END_SRC
+
+  #+RESULTS: 1fd1b522-8d79-4d5e-a1db-8a9a8f2132cf
+  :results:
+  './training_checkpoints/ckpt_10'
+  :end:
+
+  #+NAME: 8189e78e-7a2f-4b15-8f6a-bacc27562aa4
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+    model = build_model(vocab_size, embedding_dim, rnn_units, batch_size=1)
+
+    model.load_weights(tf.train.latest_checkpoint(checkpoint_dir))
+
+    model.build(tf.TensorShape([1, None]))
+
+    model.summary()
+  #+END_SRC
+
+  #+RESULTS: 8189e78e-7a2f-4b15-8f6a-bacc27562aa4
+  :results:
+  Model: "sequential"
+  _________________________________________________________________
+  Layer (type)                 Output Shape              Param #   
+  =================================================================
+  embedding (Embedding)        (1, None, 256)            16640     
+  _________________________________________________________________
+  lstm (LSTM)                  (1, None, 1024)           5246976   
+  _________________________________________________________________
+  dense (Dense)                (1, None, 65)             66625     
+  =================================================================
+  Total params: 5,330,241
+  Trainable params: 5,330,241
+  Non-trainable params: 0
+  _________________________________________________________________
+  :end:
+  
+* The prediction loop
+  #+NAME: 1f655f85-0853-419a-8bb7-8f1989929686
+  #+BEGIN_SRC ein-python :session localhost :results raw drawer
+    def generate_text(model, start_string):
+        # Evaluation step (generating text using the learned model)
+
+        # Number of characters to generate
+        num_generate = 1000
+
+        # Converting our start string to numbers (vectorizing)
+        input_eval = [char2idx[s] for s in start_string]
+        input_eval = tf.expand_dims(input_eval, 0)
+
+        # Empty string to store our results
+        text_generated = []
+
+        # Low temperatures results in more predictable text.
+        # Higher temperatures results in more surprising text.
+        # Experiment to find the best setting.
+        temperature = 1.0
+        print(input_eval.shape)
+        # Here batch size == 1
+        model.reset_states()
+        for i in range(num_generate):
+            predictions = model(input_eval)
+            # remove the batch dimension
+            predictions = tf.squeeze(predictions, 0)
+
+            # using a categorical distribution to predict the word returned by the model
+            predictions = predictions / temperature
+            predicted_id = tf.random.categorical(predictions,
+                                                 num_samples=1)[-1, 0].numpy()
+
+            # We pass the predicted word as the next input to the model
+            # along with the previous hidden state
+            input_eval = tf.expand_dims([predicted_id], 0)
+
+            text_generated.append(idx2char[predicted_id])
+
+        return (start_string + ''.join(text_generated))
+  #+END_SRC
+
+  #+RESULTS: 1f655f85-0853-419a-8bb7-8f1989929686
+  :results:
+  :end:
+
+#+NAME: a155b18d-ceb6-4fff-ab71-367f3d61a910
+#+BEGIN_SRC ein-python :session localhost :results raw drawer :exports both
+  print(generate_text(model, start_string=u"ROMEO: "))
+#+END_SRC
+
+#+RESULTS: a155b18d-ceb6-4fff-ab71-367f3d61a910
+:results:
+(1, 7)
+
+ROMEO: Spure Mastering Baptista Montagues,
+Well, welcome to your comfort wanter'd 'gaids't, we may please thee move
+Gromive to the soul's re enter'd by myself,
+bestrues sheet him with two achionst man;
+'Tis no honest cursed piece that makes.
+
+NORTHUMBERLAND:
+Here, sir! evold me, and open thee modest
+Whensolves mode thine.
+
+ISABELLA:
+Yes, Cominius shortly fellow.
+
+POLIXENET:
+But if an assadem citizens,
+His warler withwazed, or stood se, is true shedself but as strict, as to keace,
+these farther's Hate and known to hosse:
+
+Tor lord their life to cut his fortand now and husband,
+Who we are the most claps; but both good on
+The wits the old man the air may divide to suparon:'
+What a young promise to my soul not a world
+I'll forget again, and fair. Landages will!
+Fear not, my noble voices!
+Whereto mistress
+senself in hands look upon your honour and grow and sault
+For thou doth cait and release you, life?
+
+PROSPERO:
+Awhile.
+
+AUTOLYCUS:
+A do well methink; o, now you know
+I go to morrow. 3 ho! should,
+:end:
